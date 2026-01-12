@@ -61,7 +61,7 @@ class VocabularyService:
 
         items = (
             db.query(UserWord)
-            .options(joinedload(UserWord.word).defer(Word.updated_at))
+            .options(joinedload(UserWord.word).defer(Word.created_at))
             .filter(UserWord.user_id == user.id)
             .order_by(UserWord.saved_at.desc())
             .offset(skip)
