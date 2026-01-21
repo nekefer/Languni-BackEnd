@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime, ARRAY
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -22,6 +22,13 @@ class User(Base):
     google_access_token = Column(String, nullable=True)  # Google access token (expires in 1 hour)
     google_refresh_token = Column(String, nullable=True)  # Google refresh token (long-lived)
     google_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Token expiration timestamp
+    
+    # User Preferences for Onboarding
+    native_language = Column(String(10), nullable=True)  # User's native language (en, fr, es)
+    learning_language = Column(String(10), nullable=True)  # Language user wants to learn
+    topics = Column(ARRAY(String), nullable=True)  # Topics of interest (music, travel, business)
+    level = Column(String(20), nullable=True)  # Learning level (beginner, intermediate, advanced)
+    onboarding_completed = Column(Boolean, default=False)  # Whether user completed onboarding
     
     created_at = Column(DateTime, default=datetime.utcnow)  # When user was created
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Last update time

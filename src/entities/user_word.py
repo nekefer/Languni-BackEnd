@@ -14,6 +14,10 @@ class UserWord(Base):
     video_id = Column(String(255), nullable=True)  # Where they found the word
     saved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
+    # Translation in user's native language
+    translation = Column(String, nullable=True)  # Word translation in user's native language
+    native_language = Column(String(10), nullable=True)  # Target language for translation (en, fr, es)
+    
     # Relationships
     user = relationship("User", back_populates="user_words")
     word = relationship("Word", back_populates="user_words")
