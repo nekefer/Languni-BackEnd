@@ -59,6 +59,70 @@ def _fetch_captions_cached(video_id: str, language: str):
     return [{"text": item.text, "start": item.start, "duration": item.duration} 
            for item in fetched]
 
+async def _get_available_subtitles(video_id: str) -> list[str]:
+    """
+    Get available subtitle languages for a YouTube video via Captions API.
+    Returns a list of language codes, e.g., ["en", "fr"].
+    """
+    settings = get_settings()
+    url = "https://www.googleapis.com/youtube/v3/captions"
+    params = {
+        "part": "snippet",
+        "videoId": video_id,
+        "key": settings.youtube_api_key,
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, params=params)
+    if response.status_code != 200:
+        logger.warning(f"Failed to fetch captions list for {video_id}: {response.text}")
+        return []
+    data = response.json()
+    languages = [item["snippet"].get("language") for item in data.get("items", [])]
+    return [lang for lang in languages if lang]
+
+
+async def get_video_metadata(video_id: str) -> dict:
+    """
+    Fetch video metadata from YouTube Data API v3.
+    Returns a dict with title, thumbnail, language, available_subtitles, description, published_at.
+    """
+    settings = get_settings()
+    url = "https://www.googleapis.com/youtube/v3/videos"
+    params = {
+        "part": "snippet,contentDetails",
+        "id": video_id,
+        "key": settings.youtube_api_key,
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, params=params)
+    if response.status_code != 200:
+        logger.error(f"YouTube metadata error for {video_id}: {response.text}")
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch video metadata")
+    data = response.json()
+    items = data.get("items", [])
+    if not items:
+        raise HTTPException(status_code=404, detail="Video not found on YouTube")
+    item = items[0]
+    snippet = item.get("snippet", {})
+    title = snippet.get("title", "")
+    thumbnails = snippet.get("thumbnails", {})
+    thumbnail_url = (thumbnails.get("high") or thumbnails.get("medium") or thumbnails.get("default") or {}).get("url")
+    language = snippet.get("defaultAudioLanguage") or snippet.get("defaultLanguage") or "en"
+    description = snippet.get("description", "")
+    published_at = snippet.get("publishedAt")
+
+    available_subtitles = await _get_available_subtitles(video_id)
+
+    return {
+        "title": title,
+        "thumbnail": thumbnail_url,
+        "language": language,
+        "available_subtitles": available_subtitles,
+        "description": description,
+        "published_at": published_at,
+    }
+
+
 async def get_video_captions(video_id: str, language: str = 'en'):
     """
     Fetch captions for a YouTube video.
@@ -122,68 +186,6 @@ async def get_video_captions(video_id: str, language: str = 'en'):
             status_code=500,
             detail=f"Failed to fetch captions: {str(e)}"
         )
-
-    async def _get_available_subtitles(video_id: str) -> list[str]:
-        """
-        Get available subtitle languages for a YouTube video via Captions API.
-        Returns a list of language codes, e.g., ["en", "fr"].
-        """
-        settings = get_settings()
-        url = "https://www.googleapis.com/youtube/v3/captions"
-        params = {
-            "part": "snippet",
-            "videoId": video_id,
-            "key": settings.youtube_api_key,
-        }
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params)
-        if response.status_code != 200:
-            logger.warning(f"Failed to fetch captions list for {video_id}: {response.text}")
-            return []
-        data = response.json()
-        languages = [item["snippet"].get("language") for item in data.get("items", [])]
-        return [lang for lang in languages if lang]
-
-    async def get_video_metadata(video_id: str) -> dict:
-        """
-        Fetch video metadata from YouTube Data API v3.
-        Returns a dict with title, thumbnail, language, available_subtitles, description, published_at.
-        """
-        settings = get_settings()
-        url = "https://www.googleapis.com/youtube/v3/videos"
-        params = {
-            "part": "snippet,contentDetails",
-            "id": video_id,
-            "key": settings.youtube_api_key,
-        }
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params)
-        if response.status_code != 200:
-            logger.error(f"YouTube metadata error for {video_id}: {response.text}")
-            raise HTTPException(status_code=response.status_code, detail="Failed to fetch video metadata")
-        data = response.json()
-        items = data.get("items", [])
-        if not items:
-            raise HTTPException(status_code=404, detail="Video not found on YouTube")
-        item = items[0]
-        snippet = item.get("snippet", {})
-        title = snippet.get("title", "")
-        thumbnails = snippet.get("thumbnails", {})
-        thumbnail_url = (thumbnails.get("high") or thumbnails.get("medium") or thumbnails.get("default") or {}).get("url")
-        language = snippet.get("defaultAudioLanguage") or snippet.get("defaultLanguage") or "en"
-        description = snippet.get("description", "")
-        published_at = snippet.get("publishedAt")
-
-        available_subtitles = await _get_available_subtitles(video_id)
-
-        return {
-            "title": title,
-            "thumbnail": thumbnail_url,
-            "language": language,
-            "available_subtitles": available_subtitles,
-            "description": description,
-            "published_at": published_at,
-        }
 async def get_last_liked_video(google_access_token: str) -> LikedVideo:
     """
     Fetch the last video liked by the user using the YouTube Data API (async with httpx).

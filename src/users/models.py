@@ -23,7 +23,7 @@ class UserPreferencesResponse(UserPreferencesBase):
     onboarding_completed: bool = False
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class UserResponse(BaseModel):
@@ -45,4 +45,4 @@ class UserResponse(BaseModel):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
