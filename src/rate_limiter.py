@@ -17,7 +17,7 @@ limiter = Limiter(
 # Rate limit configurations for different endpoint categories
 RATE_LIMITS = {
     # Authentication endpoints (strict limits)
-    "auth_register": "5/hour",           # 5 registration attempts per hour
+    "auth_register": "5/minute",           # 5 registration attempts per minute
     "auth_login": "5/minute",            # 5 login attempts per minute
     "auth_refresh": "10/minute",         # 10 token refresh per minute
     "auth_google_login": "10/minute",    # 10 Google login initiations per minute
