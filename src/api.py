@@ -4,6 +4,7 @@ from src.users.controller import router as users_router
 from src.youtube.controller import router as youtube_router
 from src.vocabulary.controller import router as vocabulary_router
 from src.videos.controller import router as videos_router
+from src.translate.controller import router as translate_router
 
 def register_routes(app: FastAPI):
     app.include_router(auth_router)
@@ -11,3 +12,4 @@ def register_routes(app: FastAPI):
     app.include_router(youtube_router)
     app.include_router(vocabulary_router)
     app.include_router(videos_router)
+    app.include_router(translate_router)

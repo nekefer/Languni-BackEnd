@@ -37,6 +37,9 @@ RATE_LIMITS = {
     # User endpoints (moderate limits)
     "user_profile": "60/minute",         # 60 profile requests per minute
     
+    # Translation endpoints
+    "translate": "30/minute",            # 30 translation requests per minute
+
     # General API (fallback)
     "general": "100/minute",             # 100 general requests per minute
 }
