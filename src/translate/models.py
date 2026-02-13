@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 
 class TranslateRequest(BaseModel):
-    word: str               
+    word: str
 
 class TranslateResponse(BaseModel):
     translatedWord: str

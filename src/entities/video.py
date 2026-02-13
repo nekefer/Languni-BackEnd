@@ -23,6 +23,7 @@ class Video(Base):
     # Metadata (set manually or by AI)
     topics = Column(ARRAY(String), nullable=True)  # Video topics: ["music", "travel", "business"]
     difficulty_level = Column(String(20), nullable=True)  # Learning difficulty: "beginner", "intermediate", "advanced"
+    video_type = Column(String(10), nullable=True)  # "short" (<= 60s) or "video" (> 60s)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

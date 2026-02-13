@@ -38,7 +38,7 @@ async def translate_word(
     """Translate a word using the authenticated user's language preferences."""
     source = current_user.learning_language
     target = current_user.native_language
- 
+
     if not source or not target:
         raise HTTPException(
             status_code=400,
@@ -52,7 +52,7 @@ async def translate_word(
     )
 
     return TranslateResponse(
-        translatedText=translated,
+        translatedWord=translated,
         sourceLanguage=source,
         targetLanguage=target,
     )

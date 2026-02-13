@@ -5,17 +5,14 @@ from fastapi import HTTPException
 
 logger = logging.getLogger("translate.service")
 
-# 1-hour server-side cache (same pattern as youtube/service.py)
+# 1-hour server-side cache
 _TRANSLATION_CACHE = TTLCache(maxsize=1024, ttl=3600)
 
 
 class TranslationService:
     @staticmethod
     def translate_word(word: str, source_language: str, target_language: str) -> str:
-        """
-        Translate a word using Google Translate via deep-translator.
-        Results are cached server-side for 1 hour.
-        """
+     
         cache_key = (word.lower().strip(), source_language, target_language)
 
         if cache_key in _TRANSLATION_CACHE:

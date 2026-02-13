@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, UniqueConstraint, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.database.core import Base
@@ -11,7 +11,7 @@ class UserWord(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     word_id = Column(Integer, ForeignKey("words.id"), nullable=False)
-    video_id = Column(String(255), nullable=True)  # Where they found the word
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=True)
     saved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Translation in user's native language
@@ -21,6 +21,7 @@ class UserWord(Base):
     # Relationships
     user = relationship("User", back_populates="user_words")
     word = relationship("Word", back_populates="user_words")
+    video = relationship("Video")
     
     # Ensure user can't save same word twice
     __table_args__ = (

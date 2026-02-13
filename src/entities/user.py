@@ -34,7 +34,6 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Last update time
     
     # Relationships
-    playlists = relationship("Playlist", back_populates="user")
     user_words = relationship("UserWord", back_populates="user")
 
     @property

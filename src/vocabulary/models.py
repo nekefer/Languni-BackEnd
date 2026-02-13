@@ -5,7 +5,7 @@ from typing import Optional
 
 class SaveWordRequest(BaseModel):
     word: str
-    video_id: Optional[str] = None
+    video_id: Optional[int] = None
     
     @validator('word')
     def validate_word(cls, v):
@@ -26,7 +26,7 @@ class WordResponse(BaseModel):
 class SavedWordResponse(BaseModel):
     id: int
     word: WordResponse  # Nested word details
-    video_id: Optional[str]
+    video_id: Optional[int]
     saved_at: datetime
 
     class Config:
@@ -51,6 +51,6 @@ class SaveWordResponseSimple(BaseModel):
     id: int
     word_id: int
     word: str
-    video_id: Optional[str]
+    video_id: Optional[int]
     saved_at: datetime
     message: str = "Word saved successfully"

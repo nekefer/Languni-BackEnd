@@ -16,6 +16,7 @@ class VideoBase(BaseModel):
 
     topics: Optional[List[str]] = Field(None, description="Video topics (e.g., music, travel, business)")
     difficulty_level: Optional[str] = Field(None, max_length=20, description="beginner | intermediate | advanced")
+    video_type: Optional[str] = Field(None, max_length=10, description="short (<=60s) or video (>60s)")
 
 
 class VideoCreate(BaseModel):
