@@ -4,10 +4,12 @@ from typing import Optional
 from fastapi import HTTPException
 from cachetools import TTLCache
 from functools import lru_cache
+from sqlalchemy.orm import Session
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
 from .models import LikedVideo, TrendingVideo, TrendingVideosResponse
 from ..config import get_settings
+from ..entities.video import Video
 import logging
 
 
@@ -123,45 +125,59 @@ async def get_video_metadata(video_id: str) -> dict:
     }
 
 
-async def get_video_captions(video_id: str, language: str = 'en'):
+async def get_video_captions(video_id: str, language: str = 'en', db: Session | None = None):
     """
     Fetch captions for a YouTube video.
-    
+
+    Checks the database first for pre-fetched subtitles, then falls back
+    to the YouTube Transcript API.
+
     Args:
         video_id: YouTube video ID
         language: Language code (e.g., 'en', 'es', 'fr')
-        
+        db: Optional SQLAlchemy session for DB lookup
+
     Returns:
         Dict with video_id, language, and captions data
-        
+
     Raises:
         HTTPException: If captions unavailable or video not found
     """
+    # 1) Check database for stored subtitles
+    if db is not None:
+        video = db.query(Video).filter(Video.youtube_video_id == video_id).first()
+        if video and video.subtitles and video.language == language:
+            logger.info(f"Returning DB-stored captions for {video_id}")
+            return {
+                "video_id": video_id,
+                "language": language,
+                "captions": video.subtitles,
+            }
+
+    # 2) Check in-memory cache
     cache_key = (video_id, language)
-    
-    # Check cache first
     if cache_key in _CAPTIONS_CACHE:
         logger.debug(f"Returning cached captions for {video_id}")
         return _CAPTIONS_CACHE[cache_key]
-    
+
+    # 3) Fetch from YouTube API
     try:
         logger.info(f"Fetching captions for video {video_id}, language: {language}")
-        
-        # Fetch from YouTube
+
         captions = _fetch_captions_cached(video_id, language)
-        
+
         result = {
             "video_id": video_id,
             "language": language,
             "captions": captions
         }
-        
+
         # Cache the result
         _CAPTIONS_CACHE[cache_key] = result
-        
+
         logger.info(f"Successfully fetched {len(captions)} captions for {video_id}")
         return result
-        
+
     except TranscriptsDisabled:
         logger.warning(f"Captions disabled for video {video_id}")
         raise HTTPException(
