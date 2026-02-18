@@ -123,8 +123,6 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", alias="ENVIRONMENT")
     frontend_url: str = Field(..., alias="FRONTEND_URL")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    sentry_dsn: str = Field(default="", alias="SENTRY_DSN")
-    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

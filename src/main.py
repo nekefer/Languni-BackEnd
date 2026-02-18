@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from .database.core import engine, Base
 from .api import register_routes
 from .logging import configure_logging, get_logger
-from .sentry import init_sentry
 from .config import get_settings
 from .rate_limiter import limiter, rate_limit_error_handler
 from .middleware.security import SecurityHeadersMiddleware
@@ -13,9 +12,6 @@ from slowapi.errors import RateLimitExceeded
 
 # Initialize logging FIRST
 configure_logging()
-
-# Initialize Sentry (production only)
-init_sentry()
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -52,6 +48,27 @@ app.add_middleware(
 
 
 register_routes(app)
+
+
+@app.get("/health", tags=["monitoring"])
+def health_check():
+    """Health check endpoint for Vercel / uptime monitors"""
+    from sqlalchemy import text
+    from .database.core import SessionLocal
+
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        db_status = "ok"
+    except Exception:
+        db_status = "unavailable"
+
+    return {
+        "status": "ok",
+        "database": db_status,
+        "environment": settings.environment,
+    }
 
 
 @app.on_event("startup")
