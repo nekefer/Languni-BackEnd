@@ -126,6 +126,16 @@ async def get_video_captions(
             result = {"video_id": video_id, "language": lang, "captions": captions}
             _CAPTIONS_CACHE[cache_key] = result
             logger.info(f"Fetched {len(captions)} captions for {video_id} [{lang}]")
+
+            # Persist captions to DB if the video record exists
+            if db is not None:
+                db_video = db.query(Video).filter(Video.youtube_video_id == video_id).first()
+                if db_video and not db_video.subtitles:
+                    db_video.subtitles = captions
+                    db_video.language = lang
+                    db.commit()
+                    logger.info(f"Persisted captions to DB for {video_id} [{lang}]")
+
             return result
 
         logger.info(f"No [{lang}] captions for {video_id}, trying next")
