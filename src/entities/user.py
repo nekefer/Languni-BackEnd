@@ -35,6 +35,7 @@ class User(Base):
     
     # Relationships
     user_words = relationship("UserWord", back_populates="user")
+    user_videos = relationship("UserVideo", back_populates="user")
 
     @property
     def saved_words_count(self):

@@ -37,6 +37,11 @@ RATE_LIMITS = {
     # User endpoints (moderate limits)
     "user_profile": "60/minute",         # 60 profile requests per minute
     
+    # Saved videos endpoints
+    "saved_videos_save": "30/minute",    # 30 save requests per minute
+    "saved_videos_get": "60/minute",     # 60 read requests per minute
+    "saved_videos_delete": "20/minute",  # 20 delete requests per minute
+
     # Translation endpoints
     "translate": "30/minute",            # 30 translation requests per minute
 
