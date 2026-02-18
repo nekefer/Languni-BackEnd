@@ -3,7 +3,6 @@ import asyncio
 from typing import Optional
 from fastapi import HTTPException
 from cachetools import TTLCache
-from functools import lru_cache
 from sqlalchemy.orm import Session
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
@@ -13,80 +12,52 @@ from ..entities.video import Video
 import logging
 
 
-# Cache for trending videos (15-minute TTL, max 128 entries)
-_TRENDING_CACHE = TTLCache(maxsize=128, ttl=900)
+_TRENDING_CACHE = TTLCache(maxsize=128, ttl=900)   # 15-minute TTL
+_CAPTIONS_CACHE = TTLCache(maxsize=200, ttl=3600)  # 1-hour TTL
 
-# Cache for captions (1 hour TTL, max 100 entries)
-_CAPTIONS_CACHE = TTLCache(maxsize=100, ttl=3600)
+logger = logging.getLogger("youtube.service")
 
-logger = logging.getLogger("youtube.trending")
 
-@lru_cache(maxsize=100)
-def _fetch_captions_cached(video_id: str, language: str):
-    """
-    Fetch and cache captions. LRU cache keeps last 100 videos.
-    Captions rarely change, so caching is safe.
-    """
-    api = YouTubeTranscriptApi()
-    
-    # Get available transcripts
-    transcript_list = api.list(video_id)
-    available_transcripts = list(transcript_list)
-    
-    # Try to find the requested language
-    for transcript in available_transcripts:
-        if transcript.language_code == language:
-            fetched = transcript.fetch()
-            # Convert FetchedTranscript to list of dicts
-            return [{"text": item.text, "start": item.start, "duration": item.duration} 
-                   for item in fetched]
-    
-    # Fallback to English if not found
-    if language != 'en':
-        for transcript in available_transcripts:
-            if transcript.language_code == 'en':
-                fetched = transcript.fetch()
-                return [{"text": item.text, "start": item.start, "duration": item.duration} 
-                       for item in fetched]
-    
-    # Use first available transcript
-    if available_transcripts:
-        first_transcript = available_transcripts[0]
-        fetched = first_transcript.fetch()
-        return [{"text": item.text, "start": item.start, "duration": item.duration} 
-               for item in fetched]
-    
-    # If nothing found, try simple fetch (this shouldn't happen)
-    fetched = api.fetch(video_id)
-    return [{"text": item.text, "start": item.start, "duration": item.duration} 
-           for item in fetched]
+def _to_caption_dicts(fetched) -> list[dict]:
+    return [{"text": item.text, "start": item.start, "duration": item.duration} for item in fetched]
 
-async def _get_available_subtitles(video_id: str) -> list[str]:
+
+def _fetch_captions_for_language(video_id: str, language: str) -> list[dict] | None:
     """
-    Get available subtitle languages for a YouTube video via Captions API.
-    Returns a list of language codes, e.g., ["en", "fr"].
+    Fetch captions for exactly the requested language.
+    Returns None if that language is not available (caller should try the next).
+    Raises HTTPException for fatal errors that make retrying pointless.
     """
-    settings = get_settings()
-    url = "https://www.googleapis.com/youtube/v3/captions"
-    params = {
-        "part": "snippet",
-        "videoId": video_id,
-        "key": settings.youtube_api_key,
-    }
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params)
-    if response.status_code != 200:
-        logger.warning(f"Failed to fetch captions list for {video_id}: {response.text}")
-        return []
-    data = response.json()
-    languages = [item["snippet"].get("language") for item in data.get("items", [])]
-    return [lang for lang in languages if lang]
+    try:
+        transcript_list = YouTubeTranscriptApi().list(video_id)
+        return _to_caption_dicts(transcript_list.find_transcript([language]).fetch())
+    except TranscriptsDisabled:
+        raise HTTPException(status_code=404, detail="Captions are disabled for this video")
+    except VideoUnavailable:
+        raise HTTPException(status_code=404, detail="Video not found or unavailable")
+    except NoTranscriptFound:
+        return None
+
+
+def _build_language_priority(
+    learning_language: str | None,
+    native_language: str | None,
+) -> list[str]:
+    """Deduplicated ordered list: [learning_language, native_language, 'en']."""
+    seen: set[str] = set()
+    priority: list[str] = []
+    for lang in [learning_language, native_language, "en"]:
+        if lang and lang not in seen:
+            seen.add(lang)
+            priority.append(lang)
+    return priority
+
 
 
 async def get_video_metadata(video_id: str) -> dict:
     """
     Fetch video metadata from YouTube Data API v3.
-    Returns a dict with title, thumbnail, language, available_subtitles, description, published_at.
+    Returns a dict with title, thumbnail, language, description, published_at.
     """
     settings = get_settings()
     url = "https://www.googleapis.com/youtube/v3/videos"
@@ -113,95 +84,58 @@ async def get_video_metadata(video_id: str) -> dict:
     description = snippet.get("description", "")
     published_at = snippet.get("publishedAt")
 
-    available_subtitles = await _get_available_subtitles(video_id)
-
     return {
         "title": title,
         "thumbnail": thumbnail_url,
         "language": language,
-        "available_subtitles": available_subtitles,
         "description": description,
         "published_at": published_at,
     }
 
 
-async def get_video_captions(video_id: str, language: str = 'en', db: Session | None = None):
+async def get_video_captions(
+    video_id: str,
+    learning_language: str | None = None,
+    native_language: str | None = None,
+    db: Session | None = None,
+) -> dict:
     """
-    Fetch captions for a YouTube video.
+    Fetch captions for a YouTube video, trying languages in priority order:
+      1. learning_language  2. native_language  3. English
 
-    Checks the database first for pre-fetched subtitles, then falls back
-    to the YouTube Transcript API.
-
-    Args:
-        video_id: YouTube video ID
-        language: Language code (e.g., 'en', 'es', 'fr')
-        db: Optional SQLAlchemy session for DB lookup
-
-    Returns:
-        Dict with video_id, language, and captions data
-
-    Raises:
-        HTTPException: If captions unavailable or video not found
+    Sources tried per language: DB → TTL cache → YouTube Transcript API.
     """
-    # 1) Check database for stored subtitles
+    languages = _build_language_priority(learning_language, native_language)
+
+    # 1) DB: return stored subtitles if they match a preferred language
     if db is not None:
         video = db.query(Video).filter(Video.youtube_video_id == video_id).first()
-        if video and video.subtitles and video.language == language:
-            logger.info(f"Returning DB-stored captions for {video_id}")
-            return {
-                "video_id": video_id,
-                "language": language,
-                "captions": video.subtitles,
-            }
+        if video and video.subtitles and video.language in languages:
+            logger.info(f"DB hit: {video_id} [{video.language}]")
+            return {"video_id": video_id, "language": video.language, "captions": video.subtitles}
 
-    # 2) Check in-memory cache
-    cache_key = (video_id, language)
-    if cache_key in _CAPTIONS_CACHE:
-        logger.debug(f"Returning cached captions for {video_id}")
-        return _CAPTIONS_CACHE[cache_key]
+    # 2) Cache → API, in priority order
+    for lang in languages:
+        cache_key = (video_id, lang)
+        if cache_key in _CAPTIONS_CACHE:
+            logger.debug(f"Cache hit: {video_id} [{lang}]")
+            return _CAPTIONS_CACHE[cache_key]
 
-    # 3) Fetch from YouTube API
-    try:
-        logger.info(f"Fetching captions for video {video_id}, language: {language}")
+        captions = _fetch_captions_for_language(video_id, lang)  # None = not available in this lang
+        if captions is not None:
+            result = {"video_id": video_id, "language": lang, "captions": captions}
+            _CAPTIONS_CACHE[cache_key] = result
+            logger.info(f"Fetched {len(captions)} captions for {video_id} [{lang}]")
+            return result
 
-        captions = _fetch_captions_cached(video_id, language)
+        logger.info(f"No [{lang}] captions for {video_id}, trying next")
 
-        result = {
-            "video_id": video_id,
-            "language": language,
-            "captions": captions
-        }
+    raise HTTPException(
+        status_code=404,
+        detail="No captions available in your learning language, native language, or English",
+    )
 
-        # Cache the result
-        _CAPTIONS_CACHE[cache_key] = result
 
-        logger.info(f"Successfully fetched {len(captions)} captions for {video_id}")
-        return result
-
-    except TranscriptsDisabled:
-        logger.warning(f"Captions disabled for video {video_id}")
-        raise HTTPException(
-            status_code=404,
-            detail="Captions are disabled for this video"
-        )
-    except NoTranscriptFound:
-        logger.warning(f"No captions found for video {video_id} in language {language}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"No captions available in language: {language}"
-        )
-    except VideoUnavailable:
-        logger.warning(f"Video {video_id} not found or unavailable")
-        raise HTTPException(
-            status_code=404,
-            detail="Video not found or unavailable"
-        )
-    except Exception as e:
-        logger.error(f"Failed to fetch captions for {video_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch captions: {str(e)}"
-        )
 async def get_last_liked_video(google_access_token: str) -> LikedVideo:
     """
     Fetch the last video liked by the user using the YouTube Data API (async with httpx).

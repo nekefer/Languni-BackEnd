@@ -12,7 +12,6 @@ class VideoBase(BaseModel):
     thumbnail_url: Optional[str] = None
 
     language: str = Field(..., max_length=10, description="Main spoken language of the video (e.g., en, fr, es)")
-    available_subtitles: Optional[List[str]] = Field(None, description="Available subtitle languages")
 
     topics: Optional[List[str]] = Field(None, description="Video topics (e.g., music, travel, business)")
     difficulty_level: Optional[str] = Field(None, max_length=20, description="beginner | intermediate | advanced")

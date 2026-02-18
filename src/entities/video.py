@@ -19,7 +19,6 @@ class Video(Base):
     
     # Language & Subtitles (fetched from YouTube API)
     language = Column(String(10), nullable=False, index=True)  # Main video language: "en", "fr", "es"
-    available_subtitles = Column(ARRAY(String), nullable=True)  # Available subtitle languages: ["en", "fr", "es"]
     subtitles = Column(JSONB, nullable=True)  # Cached captions: [{"text": "...", "start": 0.0, "duration": 2.5}, ...]
     
     # Metadata (set manually or by AI)

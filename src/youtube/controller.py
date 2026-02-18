@@ -59,18 +59,22 @@ async def trending_videos(
 async def get_captions(
     request: Request,
     video_id: str,
-    language: str = Query(default='en', description="Language code (e.g., 'en', 'es', 'fr')"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    PUBLIC: Fetch captions for a YouTube video.
+    Fetch captions for a YouTube video.
+
+    Tries languages in order:
+    1. User's learning language
+    2. User's native language
+    3. English (fallback)
 
     Returns normalized captions with timestamps for synchronization.
     Checks the database first for pre-stored subtitles, then falls back to YouTube API.
 
     Args:
         video_id: YouTube video ID
-        language: Caption language code (default: English)
 
     Returns:
         CaptionsResponse with video_id, language, and list of timestamped captions
@@ -79,7 +83,12 @@ async def get_captions(
         404: Captions not available or video not found
         500: Internal error fetching captions
     """
-    return await get_video_captions(video_id, language, db=db)
+    return await get_video_captions(
+        video_id,
+        learning_language=current_user.learning_language,
+        native_language=current_user.native_language,
+        db=db,
+    )
 
 
 @router.get("/last-liked-video", response_model=LikedVideo)

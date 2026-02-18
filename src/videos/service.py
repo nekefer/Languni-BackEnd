@@ -36,7 +36,6 @@ class VideoService:
             url=f"https://www.youtube.com/watch?v={youtube_video_id}",
             thumbnail_url=metadata.get("thumbnail"),
             language=metadata.get("language", "en"),
-            available_subtitles=metadata.get("available_subtitles", []),
             topics=topics or [],
             difficulty_level=difficulty_level,
         )
