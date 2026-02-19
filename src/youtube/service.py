@@ -22,21 +22,27 @@ def _to_caption_dicts(fetched) -> list[dict]:
     return [{"text": item.text, "start": item.start, "duration": item.duration} for item in fetched]
 
 
-def _fetch_captions_for_language(video_id: str, language: str) -> list[dict] | None:
+def _fetch_captions_with_priority(video_id: str, languages: list[str]) -> tuple[list[dict], str] | None:
     """
-    Fetch captions for exactly the requested language.
-    Returns None if that language is not available (caller should try the next).
-    Raises HTTPException for fatal errors that make retrying pointless.
+    Fetch captions by listing transcripts once, then trying languages in priority order.
+    Returns (captions, language) or None if no language matched.
     """
     try:
         transcript_list = YouTubeTranscriptApi().list(video_id)
-        return _to_caption_dicts(transcript_list.find_transcript([language]).fetch())
     except TranscriptsDisabled:
         raise HTTPException(status_code=404, detail="Captions are disabled for this video")
     except VideoUnavailable:
         raise HTTPException(status_code=404, detail="Video not found or unavailable")
-    except NoTranscriptFound:
-        return None
+
+    for lang in languages:
+        try:
+            captions = _to_caption_dicts(transcript_list.find_transcript([lang]).fetch())
+            return captions, lang
+        except NoTranscriptFound:
+            logger.info(f"No [{lang}] captions for {video_id}, trying next")
+            continue
+
+    return None
 
 
 def _build_language_priority(
@@ -114,31 +120,31 @@ async def get_video_captions(
             logger.info(f"DB hit: {video_id} [{video.language}]")
             return {"video_id": video_id, "language": video.language, "captions": video.subtitles}
 
-    # 2) Cache → API, in priority order
+    # 2) Check cache first for any preferred language
     for lang in languages:
         cache_key = (video_id, lang)
         if cache_key in _CAPTIONS_CACHE:
             logger.debug(f"Cache hit: {video_id} [{lang}]")
             return _CAPTIONS_CACHE[cache_key]
 
-        captions = _fetch_captions_for_language(video_id, lang)  # None = not available in this lang
-        if captions is not None:
-            result = {"video_id": video_id, "language": lang, "captions": captions}
-            _CAPTIONS_CACHE[cache_key] = result
-            logger.info(f"Fetched {len(captions)} captions for {video_id} [{lang}]")
+    # 3) Single YouTube call: list transcripts once, try all languages
+    fetched = _fetch_captions_with_priority(video_id, languages)
+    if fetched is not None:
+        captions, lang = fetched
+        result = {"video_id": video_id, "language": lang, "captions": captions}
+        _CAPTIONS_CACHE[(video_id, lang)] = result
+        logger.info(f"Fetched {len(captions)} captions for {video_id} [{lang}]")
 
-            # Persist captions to DB if the video record exists
-            if db is not None:
-                db_video = db.query(Video).filter(Video.youtube_video_id == video_id).first()
-                if db_video and not db_video.subtitles:
-                    db_video.subtitles = captions
-                    db_video.language = lang
-                    db.commit()
-                    logger.info(f"Persisted captions to DB for {video_id} [{lang}]")
+        # Persist captions to DB if the video record exists
+        if db is not None:
+            db_video = db.query(Video).filter(Video.youtube_video_id == video_id).first()
+            if db_video and not db_video.subtitles:
+                db_video.subtitles = captions
+                db_video.language = lang
+                db.commit()
+                logger.info(f"Persisted captions to DB for {video_id} [{lang}]")
 
-            return result
-
-        logger.info(f"No [{lang}] captions for {video_id}, trying next")
+        return result
 
     raise HTTPException(
         status_code=404,
