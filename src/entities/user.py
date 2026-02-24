@@ -17,7 +17,16 @@ class User(Base):
     auth_method = Column(String, nullable=False, default='password')  # 'password' or 'google'
     avatar_url = Column(String, nullable=True)     # Optional profile picture
     is_active = Column(Boolean, default=True)      # Track if user account is active
-    
+    is_verified = Column(Boolean, default=False)   # Email verification status
+
+    # Email verification
+    verification_token = Column(String, nullable=True)
+    verification_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Password reset
+    reset_password_token = Column(String, nullable=True)
+    reset_password_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+
     # Google OAuth tokens for API access
     google_access_token = Column(String, nullable=True)  # Google access token (expires in 1 hour)
     google_refresh_token = Column(String, nullable=True)  # Google refresh token (long-lived)

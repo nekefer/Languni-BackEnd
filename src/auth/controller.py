@@ -3,7 +3,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette import status
-from . import  models
+from . import models
 from . import service
 from fastapi.security import OAuth2PasswordRequestForm
 from ..database.core import DbSession
@@ -12,6 +12,7 @@ from ..exceptions import AuthenticationError
 from .google.oauth_config import oauth  # fixed import
 from ..config import get_settings, Settings
 from ..entities.user import User
+from ..email import service as email_service
 import urllib.parse
 import logging
 from sqlalchemy.orm import Session
@@ -29,25 +30,38 @@ async def register_user(
     register_user_request: models.RegisterUserRequest,
     settings: Annotated[Settings, Depends(get_settings)]
 ):
-    """Register user and automatically log them in by setting auth cookies."""
+    """Register user, send verification email, and automatically log them in."""
     # Create the user
     service.register_user(db, register_user_request)
-    
+
     # Automatically log them in after registration
     user = db.query(User).filter(User.email == register_user_request.email).first()
     if not user:
         raise AuthenticationError("User creation failed")
-    
+
+    # Generate verification token and send email (non-blocking failure)
+    try:
+        raw_token = service.generate_verification_token(db, user)
+        email_service.send_verification_email(
+            first_name=user.first_name,
+            to_email=user.email,
+            raw_token=raw_token,
+            frontend_url=settings.frontend_url,
+        )
+    except Exception as e:
+        logging.error(f"Failed to send verification email to {user.email}: {e}")
+
     # Create token pair for the new user
     jwt_token = service.create_token_pair(user, settings, db)
-    
+
     # Create response with success message
     response = JSONResponse(content={
-        "message": "User registered and logged in successfully",
+        "message": "User registered successfully. Please check your email to verify your account.",
         "user": {
             "email": user.email,
             "first_name": user.first_name,
-            "last_name": user.last_name
+            "last_name": user.last_name,
+            "is_verified": user.is_verified,
         }
     })
     
@@ -186,7 +200,13 @@ async def google_auth(
         
         # Pass full token dict to service (includes access_token, refresh_token, expires_in)
         jwt_token = service.google_authenticate_user(db, user_info, settings, google_tokens=token)
-        
+
+        # Google OAuth users are auto-verified (Google already confirmed their email)
+        verified_user = db.query(User).filter(User.email == user_email).first()
+        if verified_user and not verified_user.is_verified:
+            verified_user.is_verified = True
+            db.commit()
+
         # Create response with redirect to frontend
         # Always redirect to dashboard for seamless experience
         redirect_url = f"{settings.frontend_url}/dashboard"
@@ -277,6 +297,7 @@ async def get_current_user_info(request: Request, current_user: service.CurrentU
             auth_method=user.auth_method,
             avatar_url=user.avatar_url,
             is_active=user.is_active,
+            is_verified=user.is_verified,
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         )
@@ -420,12 +441,113 @@ async def refresh_tokens(
         )
         
         return response
-        
+
     except AuthenticationError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except Exception as e:
         logging.error(f"Unexpected error in refresh_tokens: {str(e)}", exc_info=True)
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+@router.get("/verify-email")
+async def verify_email(
+    token: str,
+    db: DbSession,
+):
+    """Verify email address using the token sent by email."""
+    try:
+        service.verify_email_token(db, token)
+        return {"message": "Email verified successfully"}
+    except AuthenticationError as e:
+        error_code = str(e)
+        if "TOKEN_EXPIRED" in error_code:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "TOKEN_EXPIRED", "message": "This verification link has expired. Please request a new one."}
+            )
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_TOKEN", "message": "Invalid verification link."}
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error in verify_email: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Verification failed")
+
+
+@router.post("/resend-verification")
+@limiter.limit("3/hour")
+async def resend_verification(
+    request: Request,
+    body: models.ResendVerificationRequest,
+    db: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+):
+    """Resend verification email. Always returns success to avoid leaking whether an email exists."""
+    user = db.query(User).filter(User.email == body.email).first()
+    if user and not user.is_verified:
+        try:
+            raw_token = service.generate_verification_token(db, user)
+            email_service.send_verification_email(
+                first_name=user.first_name,
+                to_email=user.email,
+                raw_token=raw_token,
+                frontend_url=settings.frontend_url,
+            )
+        except Exception as e:
+            logging.error(f"Failed to resend verification email to {body.email}: {e}")
+    return {"message": "If that email is registered and unverified, a new verification link has been sent."}
+
+
+@router.post("/forgot-password")
+@limiter.limit("3/hour")
+async def forgot_password(
+    request: Request,
+    body: models.ForgotPasswordRequest,
+    db: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+):
+    """Send a password reset email. Always returns success to avoid leaking whether an email exists."""
+    user = db.query(User).filter(User.email == body.email).first()
+    if user and user.auth_method in ('password', 'both'):
+        try:
+            raw_token = service.generate_reset_token(db, user)
+            email_service.send_reset_password_email(
+                first_name=user.first_name,
+                to_email=user.email,
+                raw_token=raw_token,
+                frontend_url=settings.frontend_url,
+            )
+        except Exception as e:
+            logging.error(f"Failed to send reset email to {body.email}: {e}")
+    return {"message": "If that email is associated with a password account, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    body: models.ResetPasswordRequest,
+    db: DbSession,
+):
+    """Reset user password using the token from the reset email."""
+    if body.new_password != body.new_password_confirm:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+    try:
+        user = service.verify_reset_token(db, body.token)
+        service.reset_user_password(db, user, body.new_password)
+        return {"message": "Password reset successfully. You can now log in with your new password."}
+    except AuthenticationError as e:
+        error_code = str(e)
+        if "TOKEN_EXPIRED" in error_code:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "TOKEN_EXPIRED", "message": "This reset link has expired. Please request a new one."}
+            )
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_TOKEN", "message": "Invalid reset link."}
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error in reset_password: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to reset password")
 
 
 

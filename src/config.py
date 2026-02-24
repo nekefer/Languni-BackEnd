@@ -118,7 +118,11 @@ class Settings(BaseSettings):
     
     # Encryption settings
     google_token_enc_key: str = Field(..., alias="GOOGLE_TOKEN_ENC_KEY")
-    
+
+    # SendGrid email settings
+    sendgrid_api_key: str = Field(default="", alias="SENDGRID_API_KEY")
+    sendgrid_from_email: str = Field(default="", alias="SENDGRID_FROM_EMAIL")
+
     # App settings
     environment: str = Field(default="development", alias="ENVIRONMENT")
     frontend_url: str = Field(..., alias="FRONTEND_URL")

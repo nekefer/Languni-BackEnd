@@ -55,6 +55,7 @@ class UserResponse(BaseModel):
     auth_method: str
     avatar_url: str | None = None
     is_active: bool
+    is_verified: bool
     created_at: str  # ISO format string
     updated_at: str  # ISO format string
 
@@ -63,3 +64,28 @@ class PasswordChange(BaseModel):
     current_password: str
     new_password: str
     new_password_confirm: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+    new_password_confirm: str
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_password_strength(cls, v):
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one digit')
+        return v
