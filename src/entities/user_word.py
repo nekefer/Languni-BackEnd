@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, UniqueConstraint, String
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, UniqueConstraint, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from src.database.core import Base
@@ -17,6 +17,7 @@ class UserWord(Base):
     # Translation in user's native language
     translation = Column(String, nullable=True)  # Word translation in user's native language
     native_language = Column(String(10), nullable=True)  # Target language for translation (en, fr, es)
+    definition = Column(Text, nullable=True)  # JSON-serialized definition snapshot
     
     # Relationships
     user = relationship("User", back_populates="user_words")

@@ -38,7 +38,10 @@ class VocabularyService:
         user_word = UserWord(
             user_id=user.id,
             word_id=word.id,
-            video_id=word_data.video_id
+            video_id=word_data.video_id,
+            translation=word_data.translation,
+            native_language=word_data.native_language,
+            definition=word_data.definition,
         )
         
         try:
@@ -72,17 +75,14 @@ class VocabularyService:
         return items, total
     
     @staticmethod
-    async def is_word_saved(db: Session, user: User, word_text: str) -> bool:
-        """Check if user has saved a word"""
+    async def is_word_saved(db: Session, user: User, word_text: str) -> UserWord | None:
+        """Check if user has saved a word. Returns the UserWord row or None."""
         clean_word = word_text.lower().strip()
-        
-        # Join UserWord with Word to check by word text
-        result = db.query(UserWord).join(Word).filter(
+
+        return db.query(UserWord).join(Word).filter(
             UserWord.user_id == user.id,
             Word.word == clean_word
         ).first()
-        
-        return result is not None
     
     @staticmethod
     async def delete_word(db: Session, user: User, word_text: str) -> bool:

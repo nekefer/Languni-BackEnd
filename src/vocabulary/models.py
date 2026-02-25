@@ -6,7 +6,10 @@ from typing import Optional
 class SaveWordRequest(BaseModel):
     word: str
     video_id: Optional[int] = None
-    
+    translation: Optional[str] = None       # translated word in user's native language
+    native_language: Optional[str] = None   # user's native language code (en, fr, es)
+    definition: Optional[str] = None        # JSON-serialized definition snapshot
+
     @validator('word')
     def validate_word(cls, v):
         if not v or not v.strip():
@@ -28,6 +31,9 @@ class SavedWordResponse(BaseModel):
     word: WordResponse  # Nested word details
     video_id: Optional[int]
     saved_at: datetime
+    translation: Optional[str] = None
+    native_language: Optional[str] = None
+    definition: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -44,6 +50,9 @@ class SavedWordsPage(BaseModel):
 class CheckWordResponse(BaseModel):
     word: str
     saved: bool
+    definition: Optional[str] = None
+    translation: Optional[str] = None
+    native_language: Optional[str] = None
 
 
 

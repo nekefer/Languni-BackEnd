@@ -46,7 +46,7 @@ async def translate_word(
         )
 
     translated = TranslationService.translate_word(
-        body.word,
+        body.text,
         source,
         target,
     )

@@ -6,6 +6,7 @@ from src.vocabulary.controller import router as vocabulary_router
 from src.videos.controller import router as videos_router
 from src.translate.controller import router as translate_router
 from src.saved_videos.controller import router as saved_videos_router
+from src.dictionary.controller import router as dictionary_router
 
 def register_routes(app: FastAPI):
     app.include_router(auth_router)
@@ -15,3 +16,4 @@ def register_routes(app: FastAPI):
     app.include_router(videos_router)
     app.include_router(translate_router)
     app.include_router(saved_videos_router)
+    app.include_router(dictionary_router)
