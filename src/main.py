@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 app = FastAPI(
-    title="Linguini API",
+    title="Languni API",
     description="Language learning platform API with YouTube integration",
     version="1.0.0"
 )

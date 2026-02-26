@@ -21,13 +21,13 @@ def verification_email(first_name: str, verify_url: str) -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Verify your Linguini email</title>
+  <title>Verify your Languni email</title>
   {SHARED_STYLES}
 </head>
 <body>
   <div class="wrapper">
     <div class="card">
-      <div class="logo">Linguini</div>
+      <div class="logo">Languni</div>
       <h2>Verify your email address</h2>
       <p>Hi {first_name},</p>
       <p>Thanks for signing up! Click the button below to verify your email address and activate your account.</p>
@@ -37,7 +37,7 @@ def verification_email(first_name: str, verify_url: str) -> str:
       <p class="note">Having trouble with the button? Copy and paste this link into your browser:</p>
       <p class="fallback">{verify_url}</p>
     </div>
-    <div class="footer">© Linguini &nbsp;·&nbsp; You received this because you signed up for an account.</div>
+    <div class="footer">© Languni &nbsp;·&nbsp; You received this because you signed up for an account.</div>
   </div>
 </body>
 </html>"""
@@ -49,13 +49,13 @@ def reset_password_email(first_name: str, reset_url: str) -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reset your Linguini password</title>
+  <title>Reset your Languni password</title>
   {SHARED_STYLES}
 </head>
 <body>
   <div class="wrapper">
     <div class="card">
-      <div class="logo">Linguini</div>
+      <div class="logo">Languni</div>
       <h2>Reset your password</h2>
       <p>Hi {first_name},</p>
       <p>We received a request to reset your password. Click the button below to choose a new one.</p>
@@ -65,7 +65,7 @@ def reset_password_email(first_name: str, reset_url: str) -> str:
       <p class="note">Having trouble with the button? Copy and paste this link into your browser:</p>
       <p class="fallback">{reset_url}</p>
     </div>
-    <div class="footer">© Linguini &nbsp;·&nbsp; You received this because a password reset was requested for your account.</div>
+    <div class="footer">© Languni &nbsp;·&nbsp; You received this because a password reset was requested for your account.</div>
   </div>
 </body>
 </html>"""

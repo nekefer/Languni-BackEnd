@@ -33,10 +33,10 @@ def _send(to_email: str, subject: str, html_content: str) -> None:
 def send_verification_email(first_name: str, to_email: str, raw_token: str, frontend_url: str) -> None:
     verify_url = f"{frontend_url}/verify-email?token={raw_token}"
     html = templates.verification_email(first_name=first_name, verify_url=verify_url)
-    _send(to_email=to_email, subject="Verify your Linguini email", html_content=html)
+    _send(to_email=to_email, subject="Verify your Languni email", html_content=html)
 
 
 def send_reset_password_email(first_name: str, to_email: str, raw_token: str, frontend_url: str) -> None:
     reset_url = f"{frontend_url}/reset-password?token={raw_token}"
     html = templates.reset_password_email(first_name=first_name, reset_url=reset_url)
-    _send(to_email=to_email, subject="Reset your Linguini password", html_content=html)
+    _send(to_email=to_email, subject="Reset your Languni password", html_content=html)

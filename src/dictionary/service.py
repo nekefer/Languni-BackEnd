@@ -24,7 +24,7 @@ LANG_CONFIG = {
 }
 
 _USER_AGENT = (
-    "Linguini/1.0 (https://github.com/linguini; contact@linguini.app) httpx/0.25"
+    "Languni/1.0 (https://github.com/languni; contact@languni.app) httpx/0.25"
 )
 _REST_HEADERS = {"User-Agent": _USER_AGENT, "Accept": "application/json"}
 
