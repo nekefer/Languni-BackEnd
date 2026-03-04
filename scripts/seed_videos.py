@@ -9,6 +9,7 @@ Usage:
     python -m scripts.seed_videos --language en   # seed only English videos
     python -m scripts.seed_videos --topic food    # seed only food-related videos
     python -m scripts.seed_videos --count 10      # 10 videos per combo (default 5)
+    python -m scripts.seed_videos --resume-lang fr --resume-topic education  # resume from fr/education
 """
 
 import asyncio
@@ -632,6 +633,8 @@ async def run_seed(
     topics: list[str],
     videos_per_combo: int,
     dry_run: bool,
+    resume_lang: str | None = None,
+    resume_topic: str | None = None,
 ):
     settings = get_settings()
     api_key = settings.youtube_api_key
@@ -645,6 +648,18 @@ async def run_seed(
     if dry_run:
         logger.info("DRY RUN mode — nothing will be written to the database")
 
+    # Build a set of combos to skip when resuming
+    skip_before: set[tuple[str, str]] = set()
+    if resume_lang and resume_topic:
+        for l in languages:
+            for t in topics:
+                if (l, t) == (resume_lang, resume_topic):
+                    break
+                skip_before.add((l, t))
+            if resume_lang == l:
+                break
+        logger.info("Resuming from %s / %s — skipping %d already-done combos", resume_lang, resume_topic, len(skip_before))
+
     total_inserted = 0
     combo_num = 0
 
@@ -653,6 +668,9 @@ async def run_seed(
             for lang in languages:
                 for topic in topics:
                     combo_num += 1
+                    if (lang, topic) in skip_before:
+                        logger.debug("[%d/%d]  %s / %s — skipped (already done)", combo_num, total_combos, lang, topic)
+                        continue
                     logger.info("[%d/%d]  %s / %s", combo_num, total_combos, lang, topic)
 
                     if topic in CATEGORY_TOPICS:
@@ -705,12 +723,14 @@ def main():
         "--count", type=int, default=VIDEOS_PER_COMBO,
         help=f"Target videos per topic/language combo (default {VIDEOS_PER_COMBO})",
     )
+    parser.add_argument("--resume-lang", choices=LANGUAGES, help="Resume from this language (use with --resume-topic)")
+    parser.add_argument("--resume-topic", choices=TOPICS, help="Resume from this topic (use with --resume-lang)")
     args = parser.parse_args()
 
     langs = [args.language] if args.language else LANGUAGES
     tops = [args.topic] if args.topic else TOPICS
 
-    asyncio.run(run_seed(langs, tops, args.count, args.dry_run))
+    asyncio.run(run_seed(langs, tops, args.count, args.dry_run, args.resume_lang, args.resume_topic))
 
 
 if __name__ == "__main__":
