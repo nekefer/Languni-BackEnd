@@ -4,6 +4,7 @@ from sqlalchemy import func
 from src.entities.word import Word
 from src.entities.user_word import UserWord
 from src.entities.user import User
+from src.entities.video import Video
 from src.vocabulary.models import SaveWordRequest
 from src.exceptions import ValidationError
 
@@ -34,11 +35,20 @@ class VocabularyService:
         if existing:
             raise ValidationError(f"Word '{clean_word}' is already saved")
         
+        # Resolve YouTube video ID to internal video FK
+        internal_video_id = None
+        if word_data.youtube_video_id:
+            video = db.query(Video).filter(
+                Video.youtube_video_id == word_data.youtube_video_id
+            ).first()
+            if video:
+                internal_video_id = video.id
+
         # Create user-word relationship
         user_word = UserWord(
             user_id=user.id,
             word_id=word.id,
-            video_id=word_data.video_id,
+            video_id=internal_video_id,
             translation=word_data.translation,
             native_language=word_data.native_language,
             definition=word_data.definition,

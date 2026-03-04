@@ -1,6 +1,6 @@
-# Linguini Backend
+# Languni Backend
 
-FastAPI backend for Linguini - a language learning app that helps people learn **English, Spanish, or French** through interactive YouTube videos and songs.
+FastAPI backend for Languni - a language learning app that helps people learn **English, Spanish, or French** through interactive YouTube videos and songs.
 
 ## Features
 
@@ -20,7 +20,7 @@ FastAPI backend for Linguini - a language learning app that helps people learn *
 
 1. **Clone and navigate to the backend directory**
    ```bash
-   cd Linguini-BackEnd
+   cd Languni-Backend
    ```
 
 2. **Create and activate a virtual environment**
@@ -44,7 +44,7 @@ FastAPI backend for Linguini - a language learning app that helps people learn *
    Create a `.env` file in the root directory:
    ```env
    # Database
-   DATABASE_URL=postgresql://user:password@localhost:5432/linguini
+   DATABASE_URL=postgresql://user:password@localhost:5432/languni
 
    # Auth (generate secure 32+ character strings)
    SECRET_KEY=your-secret-key-here

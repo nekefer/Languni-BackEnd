@@ -82,3 +82,4 @@ docker-compose.override.yml
 Thumbs.db
 
 CLAUDE.md
+.claudeignore 

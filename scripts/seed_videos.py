@@ -3,7 +3,7 @@ Seed the videos table by fetching YouTube videos and auto-classifying
 their topic and language using YouTube's own metadata.
 
 Usage:
-    cd Linguini-BackEnd
+    cd Languni-BackEnd
     python -m scripts.seed_videos                # full seed (all topics + languages)
     python -m scripts.seed_videos --dry-run      # preview without writing to DB
     python -m scripts.seed_videos --language en   # seed only English videos

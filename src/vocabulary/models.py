@@ -5,7 +5,7 @@ from typing import Optional
 
 class SaveWordRequest(BaseModel):
     word: str
-    video_id: Optional[int] = None
+    youtube_video_id: Optional[str] = None  # YouTube video ID string (e.g. "dQw4w9WgXcQ")
     translation: Optional[str] = None       # translated word in user's native language
     native_language: Optional[str] = None   # user's native language code (en, fr, es)
     definition: Optional[str] = None        # JSON-serialized definition snapshot
