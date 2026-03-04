@@ -371,6 +371,21 @@ def get_verified_user(current_user: CurrentUser, db: DbSession) -> models.TokenD
 RequireVerified = Annotated[models.TokenData, Depends(get_verified_user)]
 
 
+def get_premium_user(current_user: CurrentUser, db: DbSession) -> models.TokenData:
+    """Dependency that ensures the authenticated user has an active Premium subscription."""
+    user_id = current_user.get_uuid()
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or user.subscription_plan != 'premium':
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "PREMIUM_REQUIRED", "message": "Upgrade to Premium to access this feature."}
+        )
+    return current_user
+
+
+RequirePremium = Annotated[models.TokenData, Depends(get_premium_user)]
+
+
 def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
                                  db: Session, settings: Settings) -> models.Token:
     user = authenticate_user(form_data.username, form_data.password, db)

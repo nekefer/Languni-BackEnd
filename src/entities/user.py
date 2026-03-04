@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ARRAY
+from sqlalchemy import Column, String, Boolean, DateTime, ARRAY, Integer, Date
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -38,13 +38,19 @@ class User(Base):
     topics = Column(ARRAY(String), nullable=True)  # Topics of interest (music, travel, business)
     level = Column(String(20), nullable=True)  # Learning level (beginner, intermediate, advanced)
     onboarding_completed = Column(Boolean, default=False)  # Whether user completed onboarding
-    
+
+    # Subscription
+    subscription_plan = Column(String(20), default='free', nullable=False)  # 'free' | 'premium'
+    daily_video_views = Column(Integer, default=0, nullable=False)
+    daily_views_date = Column(Date, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)  # When user was created
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Last update time
     
     # Relationships
     user_words = relationship("UserWord", back_populates="user")
     user_videos = relationship("UserVideo", back_populates="user")
+    subscription = relationship("Subscription", back_populates="user", uselist=False)
 
     @property
     def saved_words_count(self):

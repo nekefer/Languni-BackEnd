@@ -298,6 +298,7 @@ async def get_current_user_info(request: Request, current_user: service.CurrentU
             avatar_url=user.avatar_url,
             is_active=user.is_active,
             is_verified=user.is_verified,
+            subscription_plan=user.subscription_plan or 'free',
             created_at=user.created_at.isoformat(),
             updated_at=user.updated_at.isoformat()
         )

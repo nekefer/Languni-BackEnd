@@ -56,6 +56,7 @@ class UserResponse(BaseModel):
     avatar_url: str | None = None
     is_active: bool
     is_verified: bool
+    subscription_plan: str = 'free'
     created_at: str  # ISO format string
     updated_at: str  # ISO format string
 

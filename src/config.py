@@ -123,6 +123,12 @@ class Settings(BaseSettings):
     sendgrid_api_key: str = Field(default="", alias="SENDGRID_API_KEY")
     sendgrid_from_email: str = Field(default="", alias="SENDGRID_FROM_EMAIL")
 
+    # Lemon Squeezy billing settings
+    lemon_squeezy_api_key: str = Field(default="", alias="LEMON_SQUEEZY_API_KEY")
+    lemon_squeezy_store_id: str = Field(default="", alias="LEMON_SQUEEZY_STORE_ID")
+    lemon_squeezy_monthly_variant_id: str = Field(default="", alias="LEMON_SQUEEZY_MONTHLY_VARIANT_ID")
+    lemon_squeezy_yearly_variant_id: str = Field(default="", alias="LEMON_SQUEEZY_YEARLY_VARIANT_ID")
+
     # App settings
     environment: str = Field(default="development", alias="ENVIRONMENT")
     frontend_url: str = Field(..., alias="FRONTEND_URL")
