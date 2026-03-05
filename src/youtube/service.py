@@ -5,7 +5,14 @@ from fastapi import HTTPException
 from cachetools import TTLCache
 from sqlalchemy.orm import Session
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
+from youtube_transcript_api._errors import (
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable,
+    PoTokenRequired,
+    RequestBlocked,
+    VideoUnplayable,
+)
 from .models import LikedVideo, TrendingVideo, TrendingVideosResponse
 from ..config import get_settings
 from ..entities.video import Video
@@ -33,6 +40,13 @@ def _fetch_captions_with_priority(video_id: str, languages: list[str]) -> tuple[
         raise HTTPException(status_code=404, detail="Captions are disabled for this video")
     except VideoUnavailable:
         raise HTTPException(status_code=404, detail="Video not found or unavailable")
+    except (PoTokenRequired, RequestBlocked):
+        raise HTTPException(status_code=503, detail="Captions temporarily unavailable — YouTube is blocking server-side requests for this video")
+    except VideoUnplayable:
+        raise HTTPException(status_code=404, detail="Video is unplayable")
+    except Exception as exc:
+        logger.error(f"Unexpected error fetching transcript list for {video_id}: {exc}")
+        raise HTTPException(status_code=503, detail="Captions temporarily unavailable")
 
     for lang in languages:
         try:
@@ -40,6 +54,12 @@ def _fetch_captions_with_priority(video_id: str, languages: list[str]) -> tuple[
             return captions, lang
         except NoTranscriptFound:
             logger.info(f"No [{lang}] captions for {video_id}, trying next")
+            continue
+        except (PoTokenRequired, RequestBlocked) as exc:
+            logger.warning(f"YouTube blocked transcript fetch for {video_id} [{lang}]: {exc}")
+            raise HTTPException(status_code=503, detail="Captions temporarily unavailable — YouTube is blocking server-side requests for this video")
+        except Exception as exc:
+            logger.error(f"Error fetching transcript for {video_id} [{lang}]: {exc}")
             continue
 
     return None

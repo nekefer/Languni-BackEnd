@@ -1,8 +1,9 @@
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
+import re
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserPreferencesBase(BaseModel):
@@ -21,6 +22,27 @@ class UserPreferencesUpdate(UserPreferencesBase):
 class UserPreferencesResponse(UserPreferencesBase):
     """Response with preferences and onboarding completion status."""
     onboarding_completed: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class UserProfileUpdate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=50)
+    last_name: str = Field(..., min_length=1, max_length=50)
+
+    @field_validator('first_name', 'last_name')
+    @classmethod
+    def validate_name(cls, v):
+        if not re.match(r"^[a-zA-Z\s\'-]+$", v):
+            raise ValueError('Name can only contain letters, spaces, hyphens, and apostrophes')
+        return v.strip()
+
+
+class UserProfileResponse(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
 
     class Config:
         from_attributes = True
