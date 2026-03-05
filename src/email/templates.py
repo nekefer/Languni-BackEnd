@@ -161,7 +161,7 @@ def verification_email(first_name: str, verify_url: str) -> str:
       <div class="card-accent"></div>
       <div class="card-body">
 
-        <a href="#" class="logo">Lang<span class="logo-accent">uni</span></a>
+        <a href="#" class="logo" style="text-decoration:none;"><span style="color:#0f1a14;">Lang</span><span style="color:#2AB090;">uni</span></a>
 
         <h2>Verify your email address</h2>
         <p>Hi {first_name},</p>
@@ -205,7 +205,7 @@ def reset_password_email(first_name: str, reset_url: str) -> str:
       <div class="card-accent"></div>
       <div class="card-body">
 
-        <a href="#" class="logo">Lang<span class="logo-accent">uni</span></a>
+        <a href="#" class="logo" style="text-decoration:none;"><span style="color:#0f1a14;">Lang</span><span style="color:#2AB090;">uni</span></a>
 
         <h2>Reset your password</h2>
         <p>Hi {first_name},</p>

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from src.database.core import get_db
-from src.auth.service import RequireVerified
+from src.auth.service import RequireVerified, CurrentUser
 from src.entities.user import User
 from src.config import get_settings, Settings
 from .models import CreateCheckoutRequest, CheckoutResponse, CustomerPortalResponse, SubscriptionStatusResponse
@@ -47,7 +47,7 @@ async def create_portal(
 
 @router.get("/subscription", response_model=SubscriptionStatusResponse)
 async def get_subscription(
-    token: RequireVerified,
+    token: CurrentUser,
     db: Session = Depends(get_db),
 ):
     """Get the current user's subscription status."""

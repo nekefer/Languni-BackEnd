@@ -20,6 +20,7 @@ from src.entities.word import Word
 from src.entities.user_word import UserWord
 from src.entities.video import Video
 from src.entities.user_video import UserVideo
+from src.entities.subscription import Subscription
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
