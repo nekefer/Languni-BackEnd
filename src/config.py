@@ -6,16 +6,15 @@ import logging
 
 class DatabaseSettings(BaseModel):
     """Database configuration settings"""
-    url: str = Field(..., description="Database connection URL")
-    
-    @field_validator('url')
-    @classmethod
-    def validate_database_url(cls, v):
-        if not v:
-            raise ValueError("DATABASE_URL is required")
-        if not v.startswith(('postgresql://', 'sqlite://', 'mysql://')):
-            raise ValueError("DATABASE_URL must be a valid database URL")
-        return v
+    host: str
+    port: int
+    name: str
+    user: str
+    password: str
+
+    @property
+    def url(self) -> str:
+        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
 
 class AuthSettings(BaseModel):
@@ -95,7 +94,11 @@ class Settings(BaseSettings):
     """Main settings class that combines all configuration sections"""
     
     # Database settings
-    database_url: str = Field(..., alias="DATABASE_URL")
+    db_host: str = Field(default="localhost", alias="DB_HOST")
+    db_port: int = Field(default=5432, alias="DB_PORT")
+    db_name: str = Field(..., alias="DB_NAME")
+    db_user: str = Field(..., alias="DB_USER")
+    db_password: str = Field(..., alias="DB_PASSWORD")
     
     # Auth settings
     secret_key: str = Field(..., alias="SECRET_KEY")
@@ -144,7 +147,13 @@ class Settings(BaseSettings):
     @property
     def database(self) -> DatabaseSettings:
         """Get database settings as a structured object"""
-        return DatabaseSettings(url=self.database_url)
+        return DatabaseSettings(
+            host=self.db_host,
+            port=self.db_port,
+            name=self.db_name,
+            user=self.db_user,
+            password=self.db_password,
+        )
     
     @property
     def auth(self) -> AuthSettings:
@@ -186,8 +195,12 @@ class Settings(BaseSettings):
         ]
         
         if self.environment == "production":
-            base_origins.append(self.frontend_url)
-        
+            base_origins.extend([
+                self.frontend_url,
+                "https://languni.dev",
+                "https://www.languni.dev",
+            ])
+
         return base_origins
     
     @property

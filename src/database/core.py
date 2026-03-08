@@ -6,8 +6,8 @@ from ..config import get_settings
 
 settings = get_settings()
 
-# Use the validated DATABASE_URL from settings
-DATABASE_URL = settings.database_url
+# Build DATABASE_URL from individual settings
+DATABASE_URL = settings.database.url
 
 # The URL is already validated in the Settings class
 engine = create_engine(DATABASE_URL)
