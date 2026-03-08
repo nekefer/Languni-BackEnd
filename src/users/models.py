@@ -48,6 +48,10 @@ class UserProfileResponse(BaseModel):
         from_attributes = True
 
 
+class DeleteAccountRequest(BaseModel):
+    password: Optional[str] = Field(None, description="Required for password accounts. Omit for Google-only accounts.")
+
+
 class UserResponse(BaseModel):
     """User response including preference fields."""
     id: UUID

@@ -3,6 +3,7 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette import status
+import asyncio
 from . import models
 from . import service
 from fastapi.security import OAuth2PasswordRequestForm
@@ -110,7 +111,7 @@ async def login_for_access_token(
 ):
     """Login endpoint that sets both access and refresh tokens."""
     token_data = service.login_for_access_token(form_data, db, settings)
-    
+
     # Create response with token data
     response = JSONResponse(content={
         "access_token": token_data.access_token,
@@ -260,16 +261,16 @@ async def google_auth(
         
         return response
         
-    except KeyError as e:
-        logging.error(f"Missing required OAuth field: {str(e)}")
+    except KeyError:
+        logging.error("Google OAuth failed — missing required field in token response")
         error_url = f"{settings.frontend_url}/?error=incomplete_oauth_data"
         return RedirectResponse(url=error_url)
     except AuthenticationError as e:
-        logging.error(f"Authentication failed: {str(e)}")
+        logging.error(f"Google OAuth authentication failed: {str(e)}")
         error_url = f"{settings.frontend_url}/?error=authentication_failed"
         return RedirectResponse(url=error_url)
-    except Exception as e:
-        logging.error(f"Unexpected OAuth error: {str(e)}", exc_info=True)
+    except Exception:
+        logging.error("Unexpected Google OAuth error", exc_info=True)
         error_url = f"{settings.frontend_url}/?error=server_error"
         return RedirectResponse(url=error_url)
 
@@ -496,6 +497,8 @@ async def resend_verification(
             )
         except Exception as e:
             logging.error(f"Failed to resend verification email to {body.email}: {e}")
+    else:
+        await asyncio.sleep(0.5)
     return {"message": "If that email is registered and unverified, a new verification link has been sent."}
 
 
@@ -520,6 +523,8 @@ async def forgot_password(
             )
         except Exception as e:
             logging.error(f"Failed to send reset email to {body.email}: {e}")
+    else:
+        await asyncio.sleep(0.5)
     return {"message": "If that email is associated with a password account, a reset link has been sent."}
 
 

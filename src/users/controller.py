@@ -15,7 +15,9 @@ from src.users.models import (
 	UserPreferencesResponse,
 	UserProfileUpdate,
 	UserProfileResponse,
+	DeleteAccountRequest,
 )
+from src.auth.service import verify_password
 from src.config import get_settings
 
 router = APIRouter(prefix="/api/user", tags=["user"])
@@ -114,14 +116,22 @@ async def change_password_endpoint(
 
 @router.delete("", status_code=200)
 async def delete_account(
+	payload: DeleteAccountRequest,
 	token: CurrentUser,
 	db: Session = Depends(get_db),
 	settings=Depends(get_settings),
 ):
-	"""Delete account and all associated data, then clear auth cookies."""
+	"""Delete account and all associated data. Requires password confirmation for password accounts."""
 	user = db.query(User).filter(User.id == token.get_uuid()).first()
 	if not user:
 		raise HTTPException(status_code=401, detail="User not found")
+
+	# Password accounts must confirm with their current password
+	if user.auth_method in ('password', 'both'):
+		if not payload.password:
+			raise HTTPException(status_code=400, detail="Password confirmation is required to delete your account.")
+		if not verify_password(payload.password, user.password_hash):
+			raise HTTPException(status_code=400, detail="Incorrect password.")
 
 	user_id = user.id
 	db.query(Subscription).filter(Subscription.user_id == user_id).delete()

@@ -7,14 +7,14 @@ class RegisterUserRequest(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=50)
     last_name: str = Field(..., min_length=1, max_length=50)
     password: str = Field(..., min_length=8, max_length=128)
-    
+
     @field_validator('first_name', 'last_name')
     @classmethod
     def validate_name(cls, v):
         if not re.match(r'^[a-zA-Z\s\'-]+$', v):
             raise ValueError('Name can only contain letters, spaces, hyphens, and apostrophes')
         return v.strip()
-    
+
     @field_validator('password')
     @classmethod
     def validate_password_strength(cls, v):
@@ -26,6 +26,8 @@ class RegisterUserRequest(BaseModel):
             raise ValueError('Password must contain at least one lowercase letter')
         if not re.search(r'\d', v):
             raise ValueError('Password must contain at least one digit')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>\-_=+\[\]\\;\'`~/]', v):
+            raise ValueError('Password must contain at least one special character')
         return v
 
 class Token(BaseModel):

@@ -34,16 +34,16 @@ app.add_middleware(SecurityHeadersMiddleware)  # Add security headers
 
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.secret_key  # Use validated SECRET_KEY from settings
+    secret_key=settings.session_secret_key
 )
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,  # Use CORS origins from settings
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["Content-Type"],
 )
 
 
