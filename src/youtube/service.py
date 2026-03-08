@@ -3,125 +3,196 @@ import asyncio
 from typing import Optional
 from fastapi import HTTPException
 from cachetools import TTLCache
-from functools import lru_cache
+from sqlalchemy.orm import Session
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
+from youtube_transcript_api._errors import (
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable,
+    PoTokenRequired,
+    RequestBlocked,
+    VideoUnplayable,
+)
 from .models import LikedVideo, TrendingVideo, TrendingVideosResponse
 from ..config import get_settings
+from ..entities.video import Video
 import logging
 
 
-# Cache for trending videos (15-minute TTL, max 128 entries)
-_TRENDING_CACHE = TTLCache(maxsize=128, ttl=900)
+_TRENDING_CACHE = TTLCache(maxsize=128, ttl=900)      # 15-minute TTL
+_CAPTIONS_CACHE = TTLCache(maxsize=200, ttl=3600)     # 1-hour TTL
+_CURATED_CACHE  = TTLCache(maxsize=128, ttl=604800)   # 1-week TTL, 108 possible entries max
 
-# Cache for captions (1 hour TTL, max 100 entries)
-_CAPTIONS_CACHE = TTLCache(maxsize=100, ttl=3600)
+logger = logging.getLogger("youtube.service")
 
-logger = logging.getLogger("youtube.trending")
+_LEVEL_KEYWORDS = {
+    "beginner":     ["beginner", "easy", "simple"],
+    "intermediate": ["intermediate", "everyday"],
+    "advanced":     ["advanced", "fluent"],
+}
 
-@lru_cache(maxsize=100)
-def _fetch_captions_cached(video_id: str, language: str):
-    """
-    Fetch and cache captions. LRU cache keeps last 100 videos.
-    Captions rarely change, so caching is safe.
-    """
-    api = YouTubeTranscriptApi()
-    
-    # Get available transcripts
-    transcript_list = api.list(video_id)
-    available_transcripts = list(transcript_list)
-    
-    # Try to find the requested language
-    for transcript in available_transcripts:
-        if transcript.language_code == language:
-            fetched = transcript.fetch()
-            # Convert FetchedTranscript to list of dicts
-            return [{"text": item.text, "start": item.start, "duration": item.duration} 
-                   for item in fetched]
-    
-    # Fallback to English if not found
-    if language != 'en':
-        for transcript in available_transcripts:
-            if transcript.language_code == 'en':
-                fetched = transcript.fetch()
-                return [{"text": item.text, "start": item.start, "duration": item.duration} 
-                       for item in fetched]
-    
-    # Use first available transcript
-    if available_transcripts:
-        first_transcript = available_transcripts[0]
-        fetched = first_transcript.fetch()
-        return [{"text": item.text, "start": item.start, "duration": item.duration} 
-               for item in fetched]
-    
-    # If nothing found, try simple fetch (this shouldn't happen)
-    fetched = api.fetch(video_id)
-    return [{"text": item.text, "start": item.start, "duration": item.duration} 
-           for item in fetched]
+_TOPIC_KEYWORDS = {
+    "music":       ["music", "songs"],
+    "travel":      ["travel", "vlog"],
+    "business":    ["business", "professional"],
+    "sports":      ["sports", "fitness"],
+    "technology":  ["technology", "tech"],
+    "food":        ["food", "cooking"],
+    "news":        ["news"],
+    "movies":      ["movies", "film"],
+    "gaming":      ["gaming"],
+    "education":   ["tutorial", "education"],
+}
 
-async def get_video_captions(video_id: str, language: str = 'en'):
+_LANGUAGE_NAMES = {"en": "English", "es": "Spanish", "fr": "French"}
+_LANGUAGE_REGION = {"en": "US", "es": "ES", "fr": "FR"}
+
+
+def _to_caption_dicts(fetched) -> list[dict]:
+    return [{"text": item.text, "start": item.start, "duration": item.duration} for item in fetched]
+
+
+def _fetch_captions_with_priority(video_id: str, languages: list[str]) -> tuple[list[dict], str] | None:
     """
-    Fetch captions for a YouTube video.
-    
-    Args:
-        video_id: YouTube video ID
-        language: Language code (e.g., 'en', 'es', 'fr')
-        
-    Returns:
-        Dict with video_id, language, and captions data
-        
-    Raises:
-        HTTPException: If captions unavailable or video not found
+    Fetch captions by listing transcripts once, then trying languages in priority order.
+    Returns (captions, language) or None if no language matched.
     """
-    cache_key = (video_id, language)
-    
-    # Check cache first
-    if cache_key in _CAPTIONS_CACHE:
-        logger.debug(f"Returning cached captions for {video_id}")
-        return _CAPTIONS_CACHE[cache_key]
-    
     try:
-        logger.info(f"Fetching captions for video {video_id}, language: {language}")
-        
-        # Fetch from YouTube
-        captions = _fetch_captions_cached(video_id, language)
-        
-        result = {
-            "video_id": video_id,
-            "language": language,
-            "captions": captions
-        }
-        
-        # Cache the result
-        _CAPTIONS_CACHE[cache_key] = result
-        
-        logger.info(f"Successfully fetched {len(captions)} captions for {video_id}")
-        return result
-        
+        transcript_list = YouTubeTranscriptApi().list(video_id)
     except TranscriptsDisabled:
-        logger.warning(f"Captions disabled for video {video_id}")
-        raise HTTPException(
-            status_code=404,
-            detail="Captions are disabled for this video"
-        )
-    except NoTranscriptFound:
-        logger.warning(f"No captions found for video {video_id} in language {language}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"No captions available in language: {language}"
-        )
+        raise HTTPException(status_code=404, detail="Captions are disabled for this video")
     except VideoUnavailable:
-        logger.warning(f"Video {video_id} not found or unavailable")
-        raise HTTPException(
-            status_code=404,
-            detail="Video not found or unavailable"
-        )
-    except Exception as e:
-        logger.error(f"Failed to fetch captions for {video_id}: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch captions: {str(e)}"
-        )
+        raise HTTPException(status_code=404, detail="Video not found or unavailable")
+    except (PoTokenRequired, RequestBlocked):
+        raise HTTPException(status_code=503, detail="Captions temporarily unavailable — YouTube is blocking server-side requests for this video")
+    except VideoUnplayable:
+        raise HTTPException(status_code=404, detail="Video is unplayable")
+    except Exception as exc:
+        logger.error(f"Unexpected error fetching transcript list for {video_id}: {exc}")
+        raise HTTPException(status_code=503, detail="Captions temporarily unavailable")
+
+    for lang in languages:
+        try:
+            captions = _to_caption_dicts(transcript_list.find_transcript([lang]).fetch())
+            return captions, lang
+        except NoTranscriptFound:
+            logger.info(f"No [{lang}] captions for {video_id}, trying next")
+            continue
+        except (PoTokenRequired, RequestBlocked) as exc:
+            logger.warning(f"YouTube blocked transcript fetch for {video_id} [{lang}]: {exc}")
+            raise HTTPException(status_code=503, detail="Captions temporarily unavailable — YouTube is blocking server-side requests for this video")
+        except Exception as exc:
+            logger.error(f"Error fetching transcript for {video_id} [{lang}]: {exc}")
+            continue
+
+    return None
+
+
+def _build_language_priority(
+    learning_language: str | None,
+    native_language: str | None,
+) -> list[str]:
+    """Deduplicated ordered list: [learning_language, native_language, 'en']."""
+    seen: set[str] = set()
+    priority: list[str] = []
+    for lang in [learning_language, native_language, "en"]:
+        if lang and lang not in seen:
+            seen.add(lang)
+            priority.append(lang)
+    return priority
+
+
+async def get_video_metadata(video_id: str) -> dict:
+    """
+    Fetch video metadata from YouTube Data API v3.
+    Returns a dict with title, thumbnail, language, description, published_at.
+    """
+    settings = get_settings()
+    url = "https://www.googleapis.com/youtube/v3/videos"
+    params = {
+        "part": "snippet,contentDetails",
+        "id": video_id,
+        "key": settings.youtube_api_key,
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, params=params)
+    if response.status_code != 200:
+        logger.error(f"YouTube metadata error for {video_id}: {response.text}")
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch video metadata")
+    data = response.json()
+    items = data.get("items", [])
+    if not items:
+        raise HTTPException(status_code=404, detail="Video not found on YouTube")
+    item = items[0]
+    snippet = item.get("snippet", {})
+    title = snippet.get("title", "")
+    thumbnails = snippet.get("thumbnails", {})
+    thumbnail_url = (thumbnails.get("high") or thumbnails.get("medium") or thumbnails.get("default") or {}).get("url")
+    language = snippet.get("defaultAudioLanguage") or snippet.get("defaultLanguage") or "en"
+    description = snippet.get("description", "")
+    published_at = snippet.get("publishedAt")
+
+    return {
+        "title": title,
+        "thumbnail": thumbnail_url,
+        "language": language,
+        "description": description,
+        "published_at": published_at,
+    }
+
+
+async def get_video_captions(
+    video_id: str,
+    learning_language: str | None = None,
+    native_language: str | None = None,
+    db: Session | None = None,
+) -> dict:
+    """
+    Fetch captions for a YouTube video, trying languages in priority order:
+      1. learning_language  2. native_language  3. English
+
+    Sources tried per language: DB → TTL cache → YouTube Transcript API.
+    """
+    languages = _build_language_priority(learning_language, native_language)
+
+    # 1) DB: return stored subtitles if they match a preferred language
+    if db is not None:
+        video = db.query(Video).filter(Video.youtube_video_id == video_id).first()
+        if video and video.subtitles and video.language in languages:
+            logger.info(f"DB hit: {video_id} [{video.language}]")
+            return {"video_id": video_id, "language": video.language, "captions": video.subtitles}
+
+    # 2) Check cache first for any preferred language
+    for lang in languages:
+        cache_key = (video_id, lang)
+        if cache_key in _CAPTIONS_CACHE:
+            logger.debug(f"Cache hit: {video_id} [{lang}]")
+            return _CAPTIONS_CACHE[cache_key]
+
+    # 3) Single YouTube call: list transcripts once, try all languages
+    fetched = _fetch_captions_with_priority(video_id, languages)
+    if fetched is not None:
+        captions, lang = fetched
+        result = {"video_id": video_id, "language": lang, "captions": captions}
+        _CAPTIONS_CACHE[(video_id, lang)] = result
+        logger.info(f"Fetched {len(captions)} captions for {video_id} [{lang}]")
+
+        # Persist captions to DB if the video record exists
+        if db is not None:
+            db_video = db.query(Video).filter(Video.youtube_video_id == video_id).first()
+            if db_video and not db_video.subtitles:
+                db_video.subtitles = captions
+                db_video.language = lang
+                db.commit()
+                logger.info(f"Persisted captions to DB for {video_id} [{lang}]")
+
+        return result
+
+    raise HTTPException(
+        status_code=404,
+        detail="No captions available in your learning language, native language, or English",
+    )
+
 
 async def get_last_liked_video(google_access_token: str) -> LikedVideo:
     """
@@ -162,28 +233,15 @@ async def get_trending_videos(
     """
     Fetch trending videos from YouTube Data API v3.
     Uses in-memory caching with 15-minute TTL.
-    
-    Args:
-        region: ISO 3166-1 alpha-2 country code (e.g., "US", "GB", "JP")
-        max_results: Number of results to return (1-50)
-        page_token: Token for pagination
-        category_id: Optional category filter (e.g., "10" for Music)
-    
-    Returns:
-        TrendingVideosResponse with items, pagination token, and metadata
     """
     settings = get_settings()
-    
-    # Generate cache key as a tuple to avoid collisions
-    # (prevents "None" string from conflicting with None value)
+
     cache_key = (region, max_results, page_token, category_id)
-    
-    # Check cache (TTLCache handles expiration automatically)
+
     if cache_key in _TRENDING_CACHE:
         logger.info(f"Trending cache HIT key={cache_key}")
         return _TRENDING_CACHE[cache_key]
-    
-    # Build request
+
     url = "https://www.googleapis.com/youtube/v3/videos"
     params = {
         "part": "snippet",
@@ -192,13 +250,12 @@ async def get_trending_videos(
         "maxResults": min(max_results, 50),
         "key": settings.youtube_api_key
     }
-    
+
     if page_token:
         params["pageToken"] = page_token
     if category_id:
         params["videoCategoryId"] = category_id
-    
-    # Make API request with retry logic (reuse a single HTTP client)
+
     max_retries = 3
     retry_delay = 1.5
 
@@ -210,7 +267,6 @@ async def get_trending_videos(
                 if response.status_code == 200:
                     data = response.json()
 
-                    # Parse videos
                     videos = []
                     for item in data.get("items", []):
                         snippet = item["snippet"]
@@ -223,7 +279,6 @@ async def get_trending_videos(
                             published_at=snippet["publishedAt"]
                         ))
 
-                    # Build response
                     result = TrendingVideosResponse(
                         items=videos,
                         next_page_token=data.get("nextPageToken"),
@@ -231,29 +286,20 @@ async def get_trending_videos(
                         category=category_id
                     )
 
-                    # Cache result (TTLCache handles expiration and size limits)
                     _TRENDING_CACHE[cache_key] = result
                     logger.info(f"Trending cache SET key={cache_key}")
-
-                    
                     return result
 
-                elif response.status_code == 429:  # Rate limit
+                elif response.status_code == 429:
                     if attempt < max_retries - 1:
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 2
                         continue
                     else:
-                        raise HTTPException(
-                            status_code=429,
-                            detail="YouTube API rate limit exceeded. Please try again later."
-                        )
+                        raise HTTPException(status_code=429, detail="YouTube API rate limit exceeded. Please try again later.")
 
                 else:
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"YouTube API error: {response.text}"
-                    )
+                    raise HTTPException(status_code=response.status_code, detail=f"YouTube API error: {response.text}")
 
             except httpx.RequestError as e:
                 if attempt < max_retries - 1:
@@ -261,11 +307,118 @@ async def get_trending_videos(
                     retry_delay *= 2
                     continue
                 else:
-                    raise HTTPException(
-                        status_code=503,
-                        detail=f"Failed to connect to YouTube API: {str(e)}"
-                    )
-    
-    # Should never reach here, but just in case
+                    raise HTTPException(status_code=503, detail=f"Failed to connect to YouTube API: {str(e)}")
+
     raise HTTPException(status_code=500, detail="Unexpected error fetching trending videos")
 
+
+async def _fetch_topic_videos(
+    learning_language: str,
+    level: str,
+    topic: str,
+    per_topic: int = 8,
+) -> list[TrendingVideo]:
+    """
+    Fetch videos for a single (language, level, topic) combination.
+    Cache key is the tuple itself — max 108 unique entries (3 langs × 3 levels × 12 topics).
+    Results cached for 1 week.
+    """
+    cache_key = (learning_language, level, topic)
+    if cache_key in _CURATED_CACHE:
+        logger.debug(f"Curated cache HIT: {cache_key}")
+        return _CURATED_CACHE[cache_key]
+
+    settings = get_settings()
+    language_name = _LANGUAGE_NAMES.get(learning_language, learning_language)
+    level_kw = _LEVEL_KEYWORDS.get(level, [level])[:1]
+    topic_kws = _TOPIC_KEYWORDS.get(topic, [topic])[:1]
+    query = " ".join([language_name] + level_kw + topic_kws)
+    region = _LANGUAGE_REGION.get(learning_language, "US")
+
+    url = "https://www.googleapis.com/youtube/v3/search"
+    params = {
+        "part": "snippet",
+        "q": query,
+        "type": "video",
+        "relevanceLanguage": learning_language,
+        "regionCode": region,
+        "maxResults": min(per_topic, 50),
+        "videoEmbeddable": "true",
+        "videoCaption": "closedCaption",
+        "key": settings.youtube_api_key,
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, params=params, timeout=10.0)
+        except httpx.RequestError as e:
+            logger.error(f"Curated search failed for {cache_key}: {e}")
+            raise HTTPException(status_code=503, detail="Failed to connect to YouTube API")
+
+    if response.status_code != 200:
+        logger.error(f"YouTube Search API error {response.status_code} for {cache_key}: {response.text}")
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch curated videos")
+
+    videos = []
+    for item in response.json().get("items", []):
+        video_id = item["id"].get("videoId")
+        if not video_id:
+            continue
+        snippet = item["snippet"]
+        videos.append(TrendingVideo(
+            video_id=video_id,
+            title=snippet["title"],
+            description=snippet.get("description", ""),
+            thumbnails=snippet["thumbnails"],
+            channel_title=snippet["channelTitle"],
+            published_at=snippet["publishedAt"],
+        ))
+
+    _CURATED_CACHE[cache_key] = videos
+    logger.info(f"Curated cache SET: {cache_key} ({len(videos)} videos)")
+    return videos
+
+
+async def get_curated_videos(
+    learning_language: str,
+    level: str,
+    topics: list[str],
+    max_results: int = 12,
+) -> TrendingVideosResponse:
+    """
+    Fetch personalized videos based on user preferences.
+    Fetches per (lang, level, topic) — each combination cached independently.
+    All topic fetches run concurrently. Results are interleaved and deduplicated.
+    """
+    effective_topics = list(dict.fromkeys(topics or []))[:6]  # dedupe, cap at 6
+    if not effective_topics:
+        effective_topics = ["education"]
+
+    per_topic = max(6, max_results // len(effective_topics))
+
+    # Run all topic fetches concurrently — cache hits return instantly
+    results = await asyncio.gather(
+        *[_fetch_topic_videos(learning_language, level, t, per_topic) for t in effective_topics],
+        return_exceptions=True,
+    )
+
+    # Round-robin interleave so all topics are evenly represented
+    topic_lists = [r for r in results if isinstance(r, list)]
+    seen_ids: set[str] = set()
+    merged: list[TrendingVideo] = []
+    max_len = max((len(lst) for lst in topic_lists), default=0)
+    for i in range(max_len):
+        for lst in topic_lists:
+            if i < len(lst):
+                video = lst[i]
+                if video.video_id not in seen_ids:
+                    seen_ids.add(video.video_id)
+                    merged.append(video)
+
+    region = _LANGUAGE_REGION.get(learning_language, "US")
+    return TrendingVideosResponse(
+        items=merged[:max_results],
+        next_page_token=None,
+        region=region,
+        category=None,
+    )

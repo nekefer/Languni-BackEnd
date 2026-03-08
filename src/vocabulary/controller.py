@@ -48,6 +48,7 @@ async def save_word(
     try:
         user_word = await VocabularyService.save_word(db, current_user, word_data)
         
+        
         # Load the word relationship
         db.refresh(user_word, ["word"])
         
@@ -68,15 +69,14 @@ async def save_word(
 @limiter.limit(RATE_LIMITS["vocabulary_get"])
 async def get_saved_words(
     request: Request,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get user's saved words with pagination."""
     try:
-        skip = (page - 1) * page_size
-        user_words, total = await VocabularyService.get_user_words(db, current_user, skip, page_size)
+        user_words, total = await VocabularyService.get_user_words(db, current_user, skip, limit)
         
         word_responses = []
         for user_word in user_words:
@@ -85,20 +85,26 @@ async def get_saved_words(
                 word=user_word.word.word,
                 created_at=user_word.word.created_at
             )
-            
+
             saved_word_response = SavedWordResponse(
                 id=user_word.id,
                 word=word_response,
                 video_id=user_word.video_id,
-                saved_at=user_word.saved_at
+                saved_at=user_word.saved_at,
+                translation=user_word.translation,
+                native_language=user_word.native_language,
+                definition=user_word.definition,
             )
             word_responses.append(saved_word_response)
+        
+        # Calculate page number from skip and limit for response
+        page = (skip // limit) + 1 if limit > 0 else 1
         
         return SavedWordsPage(
             words=word_responses,
             total=total,
             page=page,
-            page_size=page_size,
+            page_size=limit,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to fetch saved words")
@@ -114,8 +120,14 @@ async def check_word_saved(
 ):
     """Check if a word is already saved"""
     try:
-        is_saved = await VocabularyService.is_word_saved(db, current_user, word)
-        return CheckWordResponse(word=word.lower().strip(), saved=is_saved)
+        user_word = await VocabularyService.is_word_saved(db, current_user, word)
+        return CheckWordResponse(
+            word=word.lower().strip(),
+            saved=user_word is not None,
+            definition=user_word.definition if user_word else None,
+            translation=user_word.translation if user_word else None,
+            native_language=user_word.native_language if user_word else None,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to check word status")
 

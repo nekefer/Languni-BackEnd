@@ -10,7 +10,6 @@ class Word(Base):
     id = Column(Integer, primary_key=True, index=True)
     word = Column(String(255), nullable=False, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     user_words = relationship("UserWord", back_populates="word")

@@ -132,8 +132,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Server": "",  # Remove server header
         }
         
-        # Add HTTPS-only headers if request is secure
-        if request.url.scheme == "https":
+        # Add HSTS in production (check config, not request scheme — proxy always forwards as http internally)
+        settings = get_settings()
+        if settings.is_production:
             security_headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
         
         # Update CSP to allow Swagger UI CDN

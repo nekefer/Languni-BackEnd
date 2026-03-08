@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Cookie, HTTPException, Query, Depends, Request
 from typing import Optional, Annotated
-from .service import get_last_liked_video, get_trending_videos, get_video_captions
+from .service import get_last_liked_video, get_trending_videos, get_video_captions, get_curated_videos
 from .models import LikedVideo, TrendingVideosResponse, CaptionsResponse
-from ..auth.service import CurrentUser, get_valid_google_token, get_current_user_from_cookie
+from ..auth.service import CurrentUser, get_valid_google_token, get_current_user_from_cookie, get_premium_user
 from ..auth import models as auth_models
 from ..database.core import get_db
 from ..rate_limiter import limiter, RATE_LIMITS
@@ -19,11 +19,11 @@ def get_current_user(
     user_id = token_data.get_uuid()
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid user token")
-    
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     return user
 
 # 🔒 PROTECT ALL ENDPOINTS: Add dependencies to the router
@@ -42,11 +42,7 @@ async def trending_videos(
     page_token: Optional[str] = Query(default=None, description="Pagination token"),
     category_id: Optional[str] = Query(default=None, description="Category ID (e.g., '10' for Music)")
 ):
-    """
-    PUBLIC: Get trending videos from YouTube.
-    No authentication required - uses API key.
-    Results are cached for 15 minutes.
-    """
+    """Get trending videos from YouTube. Available to all authenticated users."""
     return await get_trending_videos(
         region=region,
         max_results=max_results,
@@ -54,30 +50,53 @@ async def trending_videos(
         category_id=category_id
     )
 
+
+@router.get("/curated", response_model=TrendingVideosResponse)
+@limiter.limit("30/minute")
+async def curated_videos(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    _: auth_models.TokenData = Depends(get_premium_user),
+):
+    """
+    Get personalized video recommendations based on the user's learning language, level, and topics.
+    Premium only.
+    """
+    if not current_user.learning_language or not current_user.level:
+        raise HTTPException(
+            status_code=400,
+            detail="Please complete onboarding to access personalized recommendations."
+        )
+
+    return await get_curated_videos(
+        learning_language=current_user.learning_language,
+        level=current_user.level,
+        topics=current_user.topics or [],
+    )
+
+
 @router.get("/{video_id}/captions", response_model=CaptionsResponse)
 @limiter.limit(RATE_LIMITS["youtube_captions"])
 async def get_captions(
     request: Request,
     video_id: str,
-    language: str = Query(default='en', description="Language code (e.g., 'en', 'es', 'fr')")
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    PUBLIC: Fetch captions for a YouTube video.
-    
-    Returns normalized captions with timestamps for synchronization.
-    
-    Args:
-        video_id: YouTube video ID
-        language: Caption language code (default: English)
-    
-    Returns:
-        CaptionsResponse with video_id, language, and list of timestamped captions
-        
-    Raises:
-        404: Captions not available or video not found
-        500: Internal error fetching captions
+    Fetch captions for a YouTube video.
+
+    Tries languages in order:
+    1. User's learning language
+    2. User's native language
+    3. English (fallback)
     """
-    return await get_video_captions(video_id, language)
+    return await get_video_captions(
+        video_id,
+        learning_language=current_user.learning_language,
+        native_language=current_user.native_language,
+        db=db,
+    )
 
 
 @router.get("/last-liked-video", response_model=LikedVideo)
@@ -92,21 +111,17 @@ async def last_liked_video(
     SECURE: Endpoint to get the last video liked by the user.
     Automatically refreshes Google token if expired.
     """
-    # Validate user is authenticated (JWT check)
     if not current_user.get_uuid():
         raise HTTPException(status_code=401, detail="User not authenticated")
-    
+
     try:
-        # Get fresh Google token (auto-refreshes if needed)
         google_token = get_valid_google_token(db, current_user.get_uuid(), settings)
-        
-        # Fetch and return the last liked video
         return await get_last_liked_video(google_token)
-        
+
     except Exception as e:
         if "No Google" in str(e) or "reconnect" in str(e):
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Google account not connected. Please sign in with Google."
             )
         raise HTTPException(

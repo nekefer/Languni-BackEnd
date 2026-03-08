@@ -20,12 +20,8 @@ def _get_fernet() -> Fernet:
 def encrypt_token(value: Optional[str]) -> Optional[str]:
     if not value:
         return value
-    try:
-        f = _get_fernet()
-        return f.encrypt(value.encode()).decode()
-    except Exception as e:
-        logger.error(f"Failed to encrypt token: {e}")
-        return value  # fallback (should not happen)
+    f = _get_fernet()
+    return f.encrypt(value.encode()).decode()
 
 def decrypt_token(value: Optional[str]) -> Optional[str]:
     if not value:
@@ -34,9 +30,8 @@ def decrypt_token(value: Optional[str]) -> Optional[str]:
         f = _get_fernet()
         return f.decrypt(value.encode()).decode()
     except InvalidToken:
-        # Likely plaintext from before migration – return as-is
-        logger.debug("Token appears to be plaintext; returning original value.")
-        return value
+        logger.error("Token decryption failed — token is invalid or was not encrypted with the current key.")
+        return None
     except Exception as e:
-        logger.error(f"Failed to decrypt token: {e}")
+        logger.error(f"Unexpected error during token decryption: {e}")
         return None

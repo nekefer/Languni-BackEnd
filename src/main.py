@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from .database.core import engine, Base
 from .api import register_routes
 from .logging import configure_logging, get_logger
-from .sentry import init_sentry
 from .config import get_settings
 from .rate_limiter import limiter, rate_limit_error_handler
 from .middleware.security import SecurityHeadersMiddleware
@@ -14,14 +13,11 @@ from slowapi.errors import RateLimitExceeded
 # Initialize logging FIRST
 configure_logging()
 
-# Initialize Sentry (production only)
-init_sentry()
-
 logger = get_logger(__name__)
 settings = get_settings()
 
 app = FastAPI(
-    title="Linguini API",
+    title="Languni API",
     description="Language learning platform API with YouTube integration",
     version="1.0.0"
 )
@@ -38,20 +34,41 @@ app.add_middleware(SecurityHeadersMiddleware)  # Add security headers
 
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.secret_key  # Use validated SECRET_KEY from settings
+    secret_key=settings.session_secret_key
 )
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,  # Use CORS origins from settings
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["Content-Type"],
 )
 
 
 register_routes(app)
+
+
+@app.get("/health", tags=["monitoring"])
+def health_check():
+    """Health check endpoint for Vercel / uptime monitors"""
+    from sqlalchemy import text
+    from .database.core import SessionLocal
+
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        db_status = "ok"
+    except Exception:
+        db_status = "unavailable"
+
+    return {
+        "status": "ok",
+        "database": db_status,
+        "environment": settings.environment,
+    }
 
 
 @app.on_event("startup")

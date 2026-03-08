@@ -1,9 +1,10 @@
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, defer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from src.entities.word import Word
 from src.entities.user_word import UserWord
 from src.entities.user import User
+from src.entities.video import Video
 from src.vocabulary.models import SaveWordRequest
 from src.exceptions import ValidationError
 
@@ -18,6 +19,7 @@ class VocabularyService:
         
         # Get or create the word
         word = db.query(Word).filter(Word.word == clean_word).first()
+        print(f"Looking for word '{clean_word}': {'found' if word else 'not found'}")
         if not word:
             word = Word(word=clean_word)
             db.add(word)
@@ -29,14 +31,27 @@ class VocabularyService:
             UserWord.word_id == word.id
         ).first()
         
+        
         if existing:
             raise ValidationError(f"Word '{clean_word}' is already saved")
         
+        # Resolve YouTube video ID to internal video FK
+        internal_video_id = None
+        if word_data.youtube_video_id:
+            video = db.query(Video).filter(
+                Video.youtube_video_id == word_data.youtube_video_id
+            ).first()
+            if video:
+                internal_video_id = video.id
+
         # Create user-word relationship
         user_word = UserWord(
             user_id=user.id,
             word_id=word.id,
-            video_id=word_data.video_id
+            video_id=internal_video_id,
+            translation=word_data.translation,
+            native_language=word_data.native_language,
+            definition=word_data.definition,
         )
         
         try:
@@ -59,28 +74,25 @@ class VocabularyService:
 
         items = (
             db.query(UserWord)
-            .options(joinedload(UserWord.word))
+            .options(joinedload(UserWord.word).defer(Word.created_at))
             .filter(UserWord.user_id == user.id)
             .order_by(UserWord.saved_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
         )
-
+        print(f"Retrieved {len(items)} words for user {user.id} (total: {total})")
         return items, total
     
     @staticmethod
-    async def is_word_saved(db: Session, user: User, word_text: str) -> bool:
-        """Check if user has saved a word"""
+    async def is_word_saved(db: Session, user: User, word_text: str) -> UserWord | None:
+        """Check if user has saved a word. Returns the UserWord row or None."""
         clean_word = word_text.lower().strip()
-        
-        # Join UserWord with Word to check by word text
-        result = db.query(UserWord).join(Word).filter(
+
+        return db.query(UserWord).join(Word).filter(
             UserWord.user_id == user.id,
             Word.word == clean_word
         ).first()
-        
-        return result is not None
     
     @staticmethod
     async def delete_word(db: Session, user: User, word_text: str) -> bool:

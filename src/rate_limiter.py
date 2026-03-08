@@ -17,7 +17,7 @@ limiter = Limiter(
 # Rate limit configurations for different endpoint categories
 RATE_LIMITS = {
     # Authentication endpoints (strict limits)
-    "auth_register": "5/hour",           # 5 registration attempts per hour
+    "auth_register": "5/minute",           # 5 registration attempts per minute
     "auth_login": "5/minute",            # 5 login attempts per minute
     "auth_refresh": "10/minute",         # 10 token refresh per minute
     "auth_google_login": "10/minute",    # 10 Google login initiations per minute
@@ -37,6 +37,17 @@ RATE_LIMITS = {
     # User endpoints (moderate limits)
     "user_profile": "60/minute",         # 60 profile requests per minute
     
+    # Saved videos endpoints
+    "saved_videos_save": "30/minute",    # 30 save requests per minute
+    "saved_videos_get": "60/minute",     # 60 read requests per minute
+    "saved_videos_delete": "20/minute",  # 20 delete requests per minute
+
+    # Dictionary endpoints
+    "dictionary": "60/minute",           # 60 dictionary lookups per minute
+
+    # Translation endpoints
+    "translate": "30/minute",            # 30 translation requests per minute
+
     # General API (fallback)
     "general": "100/minute",             # 100 general requests per minute
 }

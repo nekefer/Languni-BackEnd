@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime, ARRAY, Integer, Date
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -17,18 +17,40 @@ class User(Base):
     auth_method = Column(String, nullable=False, default='password')  # 'password' or 'google'
     avatar_url = Column(String, nullable=True)     # Optional profile picture
     is_active = Column(Boolean, default=True)      # Track if user account is active
-    
+    is_verified = Column(Boolean, default=False)   # Email verification status
+
+    # Email verification
+    verification_token = Column(String, nullable=True)
+    verification_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Password reset
+    reset_password_token = Column(String, nullable=True)
+    reset_password_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+
     # Google OAuth tokens for API access
     google_access_token = Column(String, nullable=True)  # Google access token (expires in 1 hour)
     google_refresh_token = Column(String, nullable=True)  # Google refresh token (long-lived)
     google_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Token expiration timestamp
     
+    # User Preferences for Onboarding
+    native_language = Column(String(10), nullable=True)  # User's native language (en, fr, es)
+    learning_language = Column(String(10), nullable=True)  # Language user wants to learn
+    topics = Column(ARRAY(String), nullable=True)  # Topics of interest (music, travel, business)
+    level = Column(String(20), nullable=True)  # Learning level (beginner, intermediate, advanced)
+    onboarding_completed = Column(Boolean, default=False)  # Whether user completed onboarding
+
+    # Subscription
+    subscription_plan = Column(String(20), default='free', nullable=False)  # 'free' | 'premium'
+    daily_video_views = Column(Integer, default=0, nullable=False)
+    daily_views_date = Column(Date, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)  # When user was created
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Last update time
     
     # Relationships
-    playlists = relationship("Playlist", back_populates="user")
     user_words = relationship("UserWord", back_populates="user")
+    user_videos = relationship("UserVideo", back_populates="user")
+    subscription = relationship("Subscription", back_populates="user", uselist=False)
 
     @property
     def saved_words_count(self):

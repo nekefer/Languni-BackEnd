@@ -1,7 +1,9 @@
 from datetime import timedelta, datetime, timezone
 from typing import Annotated
 from uuid import UUID, uuid4
-from fastapi import Depends, Request
+import hashlib
+import secrets
+from fastapi import Depends, Request, HTTPException
 from passlib.context import CryptContext
 import jwt
 from jwt import PyJWTError
@@ -11,6 +13,7 @@ from . import models
 from fastapi.security import OAuth2PasswordRequestForm
 from ..exceptions import AuthenticationError
 from ..config import get_settings, Settings
+from ..database.core import DbSession
 import logging
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleRequest
@@ -274,6 +277,113 @@ def get_current_user_from_cookie(request: Request, settings: Annotated[Settings,
 
 # Cookie-based authentication for all endpoints
 CurrentUser = Annotated[models.TokenData, Depends(get_current_user_from_cookie)]
+
+
+def _hash_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def generate_verification_token(db: Session, user: User) -> str:
+    """Generate a verification token, store its hash in DB, return the raw token."""
+    from sqlalchemy import text
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = _hash_token(raw_token)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+
+    # Use a raw UPDATE to bypass any ORM tracking issues
+    db.execute(
+        text("UPDATE users SET verification_token = :token, verification_token_expires_at = :expires WHERE id = :uid"),
+        {"token": token_hash, "expires": expires_at, "uid": str(user.id)},
+    )
+    db.commit()
+
+    # Confirm the write landed
+    result = db.execute(
+        text("SELECT verification_token FROM users WHERE id = :uid"),
+        {"uid": str(user.id)},
+    ).fetchone()
+    stored = result[0] if result else None
+    logging.info(f"[verify-token] stored hash prefix for {user.email}: {stored[:8] if stored else 'NONE'}")
+    logging.info(f"[verify-token] expected hash prefix: {token_hash[:8]}")
+
+    return raw_token
+
+
+def verify_email_token(db: Session, raw_token: str) -> User:
+    """Verify the email token. Marks the user as verified on success."""
+    token_hash = _hash_token(raw_token)
+    logging.info(f"[verify-email] looking up hash prefix: {token_hash[:8]}")
+    user = db.query(User).filter(User.verification_token == token_hash).first()
+    if not user:
+        logging.warning(f"[verify-email] no user found for hash prefix: {token_hash[:8]}")
+        raise AuthenticationError("INVALID_TOKEN")
+    if user.verification_token_expires_at < datetime.now(timezone.utc):
+        raise AuthenticationError("TOKEN_EXPIRED")
+    user.is_verified = True
+    user.verification_token = None
+    user.verification_token_expires_at = None
+    db.commit()
+    return user
+
+
+def generate_reset_token(db: Session, user: User) -> str:
+    """Generate a password reset token, store its hash in DB, return the raw token."""
+    raw_token = secrets.token_urlsafe(32)
+    user.reset_password_token = _hash_token(raw_token)
+    user.reset_password_token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    db.commit()
+    return raw_token
+
+
+def verify_reset_token(db: Session, raw_token: str) -> User:
+    """Verify the reset token. Does NOT clear it — caller must do that after resetting."""
+    token_hash = _hash_token(raw_token)
+    user = db.query(User).filter(User.reset_password_token == token_hash).first()
+    if not user:
+        raise AuthenticationError("INVALID_TOKEN")
+    if user.reset_password_token_expires_at < datetime.now(timezone.utc):
+        raise AuthenticationError("TOKEN_EXPIRED")
+    return user
+
+
+def reset_user_password(db: Session, user: User, new_password: str) -> None:
+    """Set a new password and clear the reset token."""
+    user.password_hash = get_password_hash(new_password)
+    user.reset_password_token = None
+    user.reset_password_token_expires_at = None
+    if user.auth_method == 'google':
+        user.auth_method = 'both'
+    db.commit()
+
+
+def get_verified_user(current_user: CurrentUser, db: DbSession) -> models.TokenData:
+    """Dependency that ensures the authenticated user has verified their email."""
+    user_id = current_user.get_uuid()
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or not user.is_verified:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "EMAIL_NOT_VERIFIED", "message": "Please verify your email address to continue."}
+        )
+    return current_user
+
+
+RequireVerified = Annotated[models.TokenData, Depends(get_verified_user)]
+
+
+def get_premium_user(current_user: CurrentUser, db: DbSession) -> models.TokenData:
+    """Dependency that ensures the authenticated user has an active Premium subscription."""
+    user_id = current_user.get_uuid()
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or user.subscription_plan != 'premium':
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "PREMIUM_REQUIRED", "message": "Upgrade to Premium to access this feature."}
+        )
+    return current_user
+
+
+RequirePremium = Annotated[models.TokenData, Depends(get_premium_user)]
 
 
 def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
