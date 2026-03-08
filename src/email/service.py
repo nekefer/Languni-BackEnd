@@ -40,3 +40,17 @@ def send_reset_password_email(first_name: str, to_email: str, raw_token: str, fr
     reset_url = f"{frontend_url}/reset-password?token={raw_token}"
     html = templates.reset_password_email(first_name=first_name, reset_url=reset_url)
     _send(to_email=to_email, subject="Reset your Languni password", html_content=html)
+
+
+def send_contact_email(from_name: str, from_email: str, subject: str, message: str) -> None:
+    html = templates.contact_email(
+        from_name=from_name,
+        from_email=from_email,
+        subject=subject,
+        message=message,
+    )
+    _send(
+        to_email="contact@languni.dev",
+        subject=f"[Contact] {subject} — from {from_name}",
+        html_content=html,
+    )

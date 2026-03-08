@@ -232,3 +232,35 @@ def reset_password_email(first_name: str, reset_url: str) -> str:
   </div>
 </body>
 </html>"""
+
+
+def contact_email(from_name: str, from_email: str, subject: str, message: str) -> str:
+    from html import escape
+    from_name = escape(from_name)
+    from_email = escape(from_email)
+    message = escape(message)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New contact message — Languni</title>
+  {SHARED_STYLES}
+</head>
+<body>
+  <div class="wrapper">
+    <div class="card">
+      <div class="card-accent"></div>
+      <div class="card-body">
+        <a href="#" class="logo" style="text-decoration:none;"><span style="color:#0f1a14;">Lang</span><span style="color:#2AB090;">uni</span></a>
+        <h2>New contact message</h2>
+        <p><strong>From:</strong> {from_name} &lt;{from_email}&gt;</p>
+        <p><strong>Subject:</strong> {subject}</p>
+        <hr style="border:none;border-top:1px solid #e2ebe6;margin:20px 0;" />
+        <p style="white-space:pre-wrap;">{message}</p>
+      </div>
+    </div>
+    <p class="footer">© Languni &nbsp;·&nbsp; Sent via the contact form at languni.dev</p>
+  </div>
+</body>
+</html>"""
