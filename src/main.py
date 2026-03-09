@@ -19,7 +19,9 @@ settings = get_settings()
 app = FastAPI(
     title="Languni API",
     description="Language learning platform API with YouTube integration",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
 )
 
 # Add rate limiter state to app
