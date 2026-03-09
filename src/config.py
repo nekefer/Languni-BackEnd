@@ -48,7 +48,7 @@ class GoogleOAuthSettings(BaseModel):
         description="Google OAuth token URL"
     )
     scope: str = Field(
-        default="openid email profile https://www.googleapis.com/auth/youtube.readonly",
+        default="openid email profile",
         description="Google OAuth scopes"
     )
     server_metadata_url: str = Field(

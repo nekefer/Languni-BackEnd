@@ -145,9 +145,9 @@ async def login_for_access_token(
     return response
 
 @router.get("/google/login")
-async def google_login(request: Request):
+async def google_login(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
     """🎯 Unified Google OAuth - handles both registration and login automatically."""
-    redirect_uri = request.url_for('google_auth')
+    redirect_uri = settings.google_redirect_uri
     
     # Simple state parameter for CSRF protection (no intent needed)
     import secrets
