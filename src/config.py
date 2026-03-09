@@ -63,16 +63,6 @@ class AppSettings(BaseModel):
     frontend_url: str = Field(..., description="Frontend application URL")
     log_level: str = Field(default="INFO", description="Logging level")
     
-    # CORS settings
-    cors_origins: list[str] = Field(
-        default=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173"
-            "https://languni.dev"
-        ],
-        description="Allowed CORS origins"
-    )
-    
     @field_validator('log_level')
     @classmethod
     def validate_log_level(cls, v):
