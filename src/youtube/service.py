@@ -1,5 +1,6 @@
 import httpx
 import asyncio
+import os
 from typing import Optional
 from fastapi import HTTPException
 from cachetools import TTLCache
@@ -57,8 +58,10 @@ def _fetch_captions_with_priority(video_id: str, languages: list[str]) -> tuple[
     Fetch captions by listing transcripts once, then trying languages in priority order.
     Returns (captions, language) or None if no language matched.
     """
+    cookies_path = os.getenv("YOUTUBE_COOKIES_PATH")
+    api = YouTubeTranscriptApi(cookies=cookies_path) if cookies_path else YouTubeTranscriptApi()
     try:
-        transcript_list = YouTubeTranscriptApi().list(video_id)
+        transcript_list = api.list(video_id)
     except TranscriptsDisabled:
         raise HTTPException(status_code=404, detail="Captions are disabled for this video")
     except VideoUnavailable:
@@ -102,6 +105,12 @@ def _build_language_priority(
     return priority
 
 
+def _youtube_headers() -> dict:
+    """Headers required for server-side YouTube Data API requests."""
+    settings = get_settings()
+    return {"Referer": settings.frontend_url}
+
+
 async def get_video_metadata(video_id: str) -> dict:
     """
     Fetch video metadata from YouTube Data API v3.
@@ -115,7 +124,7 @@ async def get_video_metadata(video_id: str) -> dict:
         "key": settings.youtube_api_key,
     }
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params)
+        response = await client.get(url, params=params, headers=_youtube_headers())
     if response.status_code != 200:
         logger.error(f"YouTube metadata error for {video_id}: {response.text}")
         raise HTTPException(status_code=response.status_code, detail="Failed to fetch video metadata")
@@ -262,7 +271,7 @@ async def get_trending_videos(
     async with httpx.AsyncClient() as client:
         for attempt in range(max_retries):
             try:
-                response = await client.get(url, params=params, timeout=10.0)
+                response = await client.get(url, params=params, headers=_youtube_headers(), timeout=10.0)
 
                 if response.status_code == 200:
                     data = response.json()
@@ -350,7 +359,7 @@ async def _fetch_topic_videos(
 
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(url, params=params, timeout=10.0)
+            response = await client.get(url, params=params, headers=_youtube_headers(), timeout=10.0)
         except httpx.RequestError as e:
             logger.error(f"Curated search failed for {cache_key}: {e}")
             raise HTTPException(status_code=503, detail="Failed to connect to YouTube API")
