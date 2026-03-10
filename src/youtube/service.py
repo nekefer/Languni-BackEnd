@@ -58,9 +58,14 @@ def _fetch_captions_with_priority(video_id: str, languages: list[str]) -> tuple[
     Fetch captions by listing transcripts once, then trying languages in priority order.
     Returns (captions, language) or None if no language matched.
     """
-    cookies_path = os.getenv("YOUTUBE_COOKIES_PATH")
-    api = YouTubeTranscriptApi(cookies=cookies_path) if cookies_path else YouTubeTranscriptApi()
     try:
+        cookies_path = os.getenv("YOUTUBE_COOKIES_PATH")
+        logger.info(f"Fetching captions for {video_id}, cookies_path={cookies_path}")
+        try:
+            api = YouTubeTranscriptApi(cookies=cookies_path) if cookies_path else YouTubeTranscriptApi()
+        except TypeError:
+            logger.warning("youtube-transcript-api version does not support cookies= in constructor, falling back")
+            api = YouTubeTranscriptApi()
         transcript_list = api.list(video_id)
     except TranscriptsDisabled:
         raise HTTPException(status_code=404, detail="Captions are disabled for this video")
@@ -71,7 +76,7 @@ def _fetch_captions_with_priority(video_id: str, languages: list[str]) -> tuple[
     except VideoUnplayable:
         raise HTTPException(status_code=404, detail="Video is unplayable")
     except Exception as exc:
-        logger.error(f"Unexpected error fetching transcript list for {video_id}: {exc}")
+        logger.error(f"Unexpected error fetching transcript list for {video_id}: {type(exc).__name__}: {exc}", exc_info=True)
         raise HTTPException(status_code=503, detail="Captions temporarily unavailable")
 
     for lang in languages:
