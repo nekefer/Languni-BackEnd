@@ -24,7 +24,7 @@ router = APIRouter(
 )
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-@limiter.limit("20/hour")
+@limiter.limit("5/hour")
 async def register_user(
     request: Request, 
     db: DbSession,

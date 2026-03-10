@@ -76,6 +76,15 @@ def health_check():
 @app.on_event("startup")
 async def startup_event():
     """Log application startup"""
+    import os, base64, tempfile
+    cookies_b64 = os.getenv("YOUTUBE_COOKIES_B64")
+    if cookies_b64:
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="wb")
+        tmp.write(base64.b64decode(cookies_b64))
+        tmp.close()
+        os.environ["YOUTUBE_COOKIES_PATH"] = tmp.name
+        logger.info(f"YouTube cookies written to {tmp.name}")
+
     logger.info(
         "Application started",
         extra={"environment": settings.environment, "debug": settings.is_development}
