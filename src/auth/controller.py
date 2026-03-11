@@ -17,6 +17,8 @@ from ..email import service as email_service
 import urllib.parse
 import logging
 from sqlalchemy.orm import Session
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 
 router = APIRouter(
     prefix='/auth',
@@ -273,6 +275,86 @@ async def google_auth(
         logging.error("Unexpected Google OAuth error", exc_info=True)
         error_url = f"{settings.frontend_url}/?error=server_error"
         return RedirectResponse(url=error_url)
+
+
+@router.post("/google/one-tap")
+@limiter.limit("10/minute")
+async def google_one_tap(
+    request: Request,
+    body: models.GoogleOneTapRequest,
+    db: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)]
+):
+    """Verify a Google One Tap credential JWT and log in or register the user."""
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            body.credential,
+            google_requests.Request(),
+            settings.google_client_id
+        )
+
+        if idinfo.get("aud") != settings.google_client_id:
+            raise HTTPException(status_code=401, detail="Invalid credential audience")
+
+        if not idinfo.get("email_verified"):
+            raise HTTPException(status_code=401, detail="Google email not verified")
+
+        user_info = {
+            "email": idinfo.get("email"),
+            "given_name": idinfo.get("given_name", ""),
+            "family_name": idinfo.get("family_name", ""),
+            "sub": idinfo.get("sub"),
+            "picture": idinfo.get("picture"),
+        }
+
+        jwt_token = service.google_authenticate_user(db, user_info, settings)
+
+        verified_user = db.query(User).filter(User.email == user_info["email"]).first()
+        if verified_user and not verified_user.is_verified:
+            verified_user.is_verified = True
+            db.commit()
+
+        response = JSONResponse(content={
+            "email": verified_user.email,
+            "first_name": verified_user.first_name,
+            "last_name": verified_user.last_name,
+            "avatar_url": verified_user.avatar_url,
+            "auth_method": verified_user.auth_method,
+            "is_verified": verified_user.is_verified,
+            "subscription_plan": verified_user.subscription_plan or "free",
+        })
+
+        response.set_cookie(
+            key="access_token",
+            value=jwt_token.access_token,
+            httponly=True,
+            secure=settings.is_production,
+            samesite="lax",
+            max_age=settings.access_token_expire_minutes * 60,
+            path="/"
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value=jwt_token.refresh_token,
+            httponly=True,
+            secure=settings.is_production,
+            samesite="lax",
+            max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+            path="/"
+        )
+
+        return response
+
+    except ValueError as e:
+        logging.warning(f"Invalid Google One Tap credential: {e}")
+        raise HTTPException(status_code=401, detail="Invalid Google credential")
+    except AuthenticationError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logging.error("Unexpected error in Google One Tap", exc_info=True)
+        raise HTTPException(status_code=500, detail="Authentication failed")
 
 
 @router.get("/me", response_model=models.UserResponse)
