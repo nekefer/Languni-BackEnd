@@ -2,6 +2,10 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
 
+class GoogleOneTapRequest(BaseModel):
+    credential: str
+
+
 class RegisterUserRequest(BaseModel):
     email: EmailStr
     first_name: str = Field(..., min_length=1, max_length=50)
