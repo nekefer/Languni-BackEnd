@@ -122,6 +122,7 @@ class Settings(BaseSettings):
     lemon_squeezy_store_id: str = Field(default="", alias="LEMON_SQUEEZY_STORE_ID")
     lemon_squeezy_monthly_variant_id: str = Field(default="", alias="LEMON_SQUEEZY_MONTHLY_VARIANT_ID")
     lemon_squeezy_yearly_variant_id: str = Field(default="", alias="LEMON_SQUEEZY_YEARLY_VARIANT_ID")
+    lemon_squeezy_webhook_secret: str = Field(default="", alias="LEMON_SQUEEZY_WEBHOOK_SECRET")
 
     # App settings
     environment: str = Field(default="development", alias="ENVIRONMENT")

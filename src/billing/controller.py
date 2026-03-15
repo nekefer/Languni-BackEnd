@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 from src.database.core import get_db
 from src.auth.service import RequireVerified, CurrentUser
@@ -6,6 +7,8 @@ from src.entities.user import User
 from src.config import get_settings, Settings
 from .models import CreateCheckoutRequest, CheckoutResponse, CustomerPortalResponse, SubscriptionStatusResponse
 from .service import BillingService
+
+logger = logging.getLogger("billing")
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -55,3 +58,37 @@ async def get_subscription(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return BillingService.get_subscription(db, user)
+
+
+@router.post("/webhook", status_code=200)
+async def lemon_squeezy_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    x_signature: str = Header(..., alias="X-Signature"),
+):
+    """Receive and process Lemon Squeezy webhook events."""
+    import json
+
+    raw_body = await request.body()
+
+    if not BillingService.verify_webhook_signature(raw_body, x_signature, settings.lemon_squeezy_webhook_secret):
+        logger.warning("Webhook signature verification failed")
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    try:
+        payload = json.loads(raw_body)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    event_name = payload.get("meta", {}).get("event_name", "unknown")
+    logger.info(f"Received LS webhook: {event_name}")
+
+    try:
+        BillingService.handle_webhook(payload, db)
+    except Exception as e:
+        logger.error(f"Webhook handler error for {event_name}: {e}", exc_info=True)
+        # Still return 200 so LS doesn't retry for internal errors
+        return {"received": True}
+
+    return {"received": True}
