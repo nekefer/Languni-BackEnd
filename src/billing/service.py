@@ -68,39 +68,29 @@ class BillingService:
 
     @staticmethod
     async def create_portal_session(user: User, settings: Settings) -> str:
-        """Generate a Lemon Squeezy customer portal URL."""
+        """Generate a Lemon Squeezy customer portal URL by fetching the subscription."""
         subscription = user.subscription
-        if not subscription or not subscription.ls_customer_id:
+        if not subscription or not subscription.ls_subscription_id:
             raise Exception("No active subscription found")
 
         headers = {
             "Authorization": f"Bearer {settings.lemon_squeezy_api_key}",
             "Accept": "application/vnd.api+json",
-            "Content-Type": "application/vnd.api+json",
-        }
-        payload = {
-            "data": {
-                "type": "customer-portal-sessions",
-                "attributes": {
-                    "customer_id": int(subscription.ls_customer_id),
-                },
-            }
         }
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{LS_API_BASE}/customer-portal-sessions",
+            response = await client.get(
+                f"{LS_API_BASE}/subscriptions/{subscription.ls_subscription_id}",
                 headers=headers,
-                json=payload,
                 timeout=15.0,
             )
 
-        if response.status_code not in (200, 201):
-            logger.error(f"LS portal session failed: {response.status_code} {response.text}")
-            raise Exception("Failed to create customer portal session")
+        if response.status_code != 200:
+            logger.error(f"LS fetch subscription failed: {response.status_code} {response.text}")
+            raise Exception("Failed to fetch subscription")
 
         data = response.json()
-        portal_url = data["data"]["attributes"]["url"]
+        portal_url = data["data"]["attributes"]["urls"]["customer_portal"]
         return portal_url
 
     @staticmethod
