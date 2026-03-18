@@ -209,17 +209,19 @@ def create_token_pair(user: User, settings: Settings, db: Session) -> models.Tok
         settings.jwt_secret_key, 
         settings.algorithm
     )
-    # Create refresh token (long-lived) - NO DATABASE STORAGE
+    # Create refresh token (long-lived)
     refresh_expires = timedelta(days=settings.refresh_token_expire_days)
     refresh_token = create_refresh_token(
-        user.id, 
-        refresh_expires, 
-        settings.jwt_secret_key, 
+        user.id,
+        refresh_expires,
+        settings.jwt_secret_key,
         settings.algorithm
     )
-    
-    # ✅ NO MORE DATABASE STORAGE - tokens are stateless
-    
+
+    # Store hash — invalidates any previous refresh token for this user
+    user.refresh_token_hash = _hash_token(refresh_token)
+    db.commit()
+
     return models.Token(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -347,10 +349,11 @@ def verify_reset_token(db: Session, raw_token: str) -> User:
 
 
 def reset_user_password(db: Session, user: User, new_password: str) -> None:
-    """Set a new password and clear the reset token."""
+    """Set a new password, clear the reset token, and invalidate all existing refresh tokens."""
     user.password_hash = get_password_hash(new_password)
     user.reset_password_token = None
     user.reset_password_token_expires_at = None
+    user.refresh_token_hash = None
     if user.auth_method == 'google':
         user.auth_method = 'both'
     db.commit()
@@ -384,6 +387,20 @@ def get_premium_user(current_user: CurrentUser, db: DbSession) -> models.TokenDa
 
 
 RequirePremium = Annotated[models.TokenData, Depends(get_premium_user)]
+
+
+def logout_user(db: Session, refresh_token: str | None, settings: Settings) -> None:
+    """Clear refresh token hash on logout so the token can no longer be used."""
+    if not refresh_token:
+        return
+    try:
+        token_data = verify_refresh_token(refresh_token, settings.jwt_secret_key, settings.algorithm)
+        user = db.query(User).filter(User.id == token_data.get_uuid()).first()
+        if user:
+            user.refresh_token_hash = None
+            db.commit()
+    except Exception:
+        pass  # Token already invalid — nothing to clear
 
 
 def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -486,8 +503,9 @@ def change_password(db: Session, user_id: UUID, password_change: models.Password
         if password_change.new_password != password_change.new_password_confirm:
             raise AuthenticationError("New passwords do not match")
         
-        # Update password
+        # Update password and invalidate all existing refresh tokens
         user.password_hash = get_password_hash(password_change.new_password)
+        user.refresh_token_hash = None
         db.commit()
         logging.info(f"Successfully changed password for user ID: {user_id}")
     except Exception as e:
@@ -496,14 +514,15 @@ def change_password(db: Session, user_id: UUID, password_change: models.Password
 
 
 def refresh_token_pair(refresh_token: str, db: Session, settings: Settings) -> models.Token:
-    """✅ UPDATED: Create new token pair using refresh token (stateless)."""
-    # Verify refresh token (no database needed)
+    """Create new token pair using refresh token. Validates hash stored in DB."""
     token_data = verify_refresh_token(refresh_token, settings.jwt_secret_key, settings.algorithm)
-    
-    # Get user from database (only for user info)
+
     user = db.query(User).filter(User.id == token_data.get_uuid()).first()
     if not user:
         raise AuthenticationError("User not found")
-    
-    # Create new token pair
+
+    # Reject if hash doesn't match — token was invalidated (password change, logout, etc.)
+    if not user.refresh_token_hash or user.refresh_token_hash != _hash_token(refresh_token):
+        raise AuthenticationError("Invalid refresh token")
+
     return create_token_pair(user, settings, db)

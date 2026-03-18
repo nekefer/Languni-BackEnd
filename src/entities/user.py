@@ -39,6 +39,9 @@ class User(Base):
     level = Column(String(20), nullable=True)  # Learning level (beginner, intermediate, advanced)
     onboarding_completed = Column(Boolean, default=False)  # Whether user completed onboarding
 
+    # Refresh token revocation
+    refresh_token_hash = Column(String, nullable=True)
+
     # Subscription
     subscription_plan = Column(String(20), default='free', nullable=False)  # 'free' | 'premium'
     daily_video_views = Column(Integer, default=0, nullable=False)
