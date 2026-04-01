@@ -399,6 +399,10 @@ async def get_current_user_info(request: Request, current_user: service.CurrentU
 async def logout(request: Request, db: DbSession, settings: Annotated[Settings, Depends(get_settings)]):
     """✅ UPDATED: Logout endpoint - clears all cookies including Google tokens."""
     try:
+        # Invalidate refresh token in DB
+        refresh_token = request.cookies.get("refresh_token")
+        service.logout_user(db, refresh_token, settings)
+
         # Create response
         response = JSONResponse(content={"message": "Successfully logged out"})
         
