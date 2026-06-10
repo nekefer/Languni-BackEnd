@@ -12,7 +12,6 @@ class Subscription(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, unique=True)
 
-    # Lemon Squeezy identifiers
     ls_customer_id = Column(String, nullable=True)
     ls_subscription_id = Column(String, nullable=True, unique=True)
     ls_order_id = Column(String, nullable=True)

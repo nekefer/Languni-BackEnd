@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/contact", tags=["contact"])
 
-SUBJECTS = Literal["General", "Bug report", "Billing", "Feature request", "Other"]
+SUBJECTS = Literal["General", "Bug report", "Account support", "Feature request", "Other"]
 
 
 class ContactRequest(BaseModel):

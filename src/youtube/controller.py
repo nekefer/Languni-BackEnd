@@ -2,7 +2,7 @@ from fastapi import APIRouter, Cookie, HTTPException, Query, Depends, Request
 from typing import Optional, Annotated
 from .service import get_last_liked_video, get_trending_videos, get_video_captions, get_curated_videos
 from .models import LikedVideo, TrendingVideosResponse, CaptionsResponse
-from ..auth.service import CurrentUser, get_valid_google_token, get_current_user_from_cookie, get_premium_user
+from ..auth.service import CurrentUser, get_valid_google_token, get_current_user_from_cookie
 from ..auth import models as auth_models
 from ..database.core import get_db
 from ..rate_limiter import limiter, RATE_LIMITS
@@ -56,11 +56,10 @@ async def trending_videos(
 async def curated_videos(
     request: Request,
     current_user: User = Depends(get_current_user),
-    _: auth_models.TokenData = Depends(get_premium_user),
 ):
     """
     Get personalized video recommendations based on the user's learning language, level, and topics.
-    Premium only.
+    Available to all authenticated users.
     """
     if not current_user.learning_language or not current_user.level:
         raise HTTPException(

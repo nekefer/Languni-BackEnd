@@ -1,6 +1,4 @@
 from typing import List, Optional
-from datetime import date
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -86,32 +84,12 @@ async def start_watching(
     token: RequireVerified,
     db: Session = Depends(get_db),
 ):
-    """
-    Call this when the player loads a video.
-    Premium users always pass. Free users are limited to 5 videos/day.
-    """
+    """Call this when the player loads a video."""
     user = db.query(User).filter(User.id == token.get_uuid()).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if user.subscription_plan == 'premium':
-        return {"allowed": True, "remaining": None}
-
-    today = date.today()
-    if user.daily_views_date != today:
-        user.daily_video_views = 0
-        user.daily_views_date = today
-
-    if user.daily_video_views >= 5:
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "DAILY_LIMIT_REACHED", "message": "You've watched 5 videos today. Upgrade to Premium for unlimited access."}
-        )
-
-    user.daily_video_views += 1
-    db.commit()
-
-    return {"allowed": True, "remaining": 5 - user.daily_video_views}
+    return {"allowed": True, "remaining": None}
 
 
 @router.get("/", response_model=VideoListResponse)

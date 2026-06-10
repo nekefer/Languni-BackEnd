@@ -23,7 +23,7 @@ google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 google-auth-httplib2>=0.1.1
 cryptography>=41.0.0
-youtube-transcript-api>=1.2.0,<2.0.0
+youtube-transcript-api==1.2.4
 python-json-logger
 deep-translator>=1.11.0
 sendgrid>=6.0.0
