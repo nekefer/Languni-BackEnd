@@ -100,7 +100,6 @@ def _build_language_priority(
     learning_language: str | None,
     native_language: str | None,
 ) -> list[str]:
-    """Deduplicated ordered list: [learning_language, native_language, 'en']."""
     seen: set[str] = set()
     priority: list[str] = []
     for lang in [learning_language, native_language, "en"]:

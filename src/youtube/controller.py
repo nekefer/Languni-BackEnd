@@ -9,6 +9,7 @@ from ..rate_limiter import limiter, RATE_LIMITS
 from ..entities.user import User
 from sqlalchemy.orm import Session
 from ..config import get_settings, Settings
+from ..exceptions import AuthenticationError
 
 # Helper to get authenticated user
 def get_current_user(
@@ -26,12 +27,27 @@ def get_current_user(
 
     return user
 
-# 🔒 PROTECT ALL ENDPOINTS: Add dependencies to the router
 router = APIRouter(
     prefix="/youtube",
     tags=["youtube"],
-    dependencies=[Depends(get_current_user)]  # ← This protects EVERY endpoint!
 )
+
+
+def get_optional_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> User | None:
+    """Return a user when auth cookies are present; otherwise allow guest use."""
+    try:
+        token_data = get_current_user_from_cookie(request, settings)
+    except AuthenticationError:
+        return None
+
+    user_id = token_data.get_uuid()
+    if not user_id:
+        return None
+    return db.query(User).filter(User.id == user_id).first()
 
 @router.get("/trending", response_model=TrendingVideosResponse)
 @limiter.limit(RATE_LIMITS["youtube_trending"])
@@ -42,7 +58,7 @@ async def trending_videos(
     page_token: Optional[str] = Query(default=None, description="Pagination token"),
     category_id: Optional[str] = Query(default=None, description="Category ID (e.g., '10' for Music)")
 ):
-    """Get trending videos from YouTube. Available to all authenticated users."""
+    """Get trending videos from YouTube. Available to guests and authenticated users."""
     return await get_trending_videos(
         region=region,
         max_results=max_results,
@@ -79,8 +95,10 @@ async def curated_videos(
 async def get_captions(
     request: Request,
     video_id: str,
+    native_language: Optional[str] = Query(default=None, description="Language to translate into for guests"),
+    learning_language: Optional[str] = Query(default=None, description="Preferred caption language for guests"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ):
     """
     Fetch captions for a YouTube video.
@@ -92,8 +110,8 @@ async def get_captions(
     """
     return await get_video_captions(
         video_id,
-        learning_language=current_user.learning_language,
-        native_language=current_user.native_language,
+        learning_language=current_user.learning_language if current_user else learning_language,
+        native_language=current_user.native_language if current_user else native_language,
         db=db,
     )
 

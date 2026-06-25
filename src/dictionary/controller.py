@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from src.database.core import get_db
 from src.auth.service import get_current_user_from_cookie
 from src.auth import models as auth_models
 from src.entities.user import User
 from src.rate_limiter import limiter, RATE_LIMITS
+from src.config import get_settings, Settings
+from src.exceptions import AuthenticationError
 from .models import DictionaryResponse
 from .service import DictionaryService, SUPPORTED_LANGUAGES
 
@@ -24,15 +26,32 @@ def get_current_user(
     return user
 
 
+def get_optional_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> User | None:
+    try:
+        token_data = get_current_user_from_cookie(request, settings)
+    except AuthenticationError:
+        return None
+
+    user_id = token_data.get_uuid()
+    if not user_id:
+        return None
+    return db.query(User).filter(User.id == user_id).first()
+
+
 @router.get("/{word}", response_model=DictionaryResponse)
 @limiter.limit(RATE_LIMITS.get("dictionary", "30/minute"))
 async def get_definition(
     request: Request,
     word: str,
-    current_user: User = Depends(get_current_user),
+    language: str | None = Query(default=None, description="Dictionary language for guest lookups"),
+    current_user: User | None = Depends(get_optional_user),
 ):
     """Fetch word definition from Wiktionary using the user's learning language."""
-    language = current_user.learning_language or "en"
+    language = (current_user.learning_language if current_user else language) or "en"
 
     if language not in SUPPORTED_LANGUAGES:
         language = "en"
