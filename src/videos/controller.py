@@ -51,6 +51,9 @@ async def create_video_from_youtube(
     Create a video entry by fetching metadata from YouTube.
     TODO: restrict to admin users when roles/permissions are available.
     """
+    from src.config import get_settings
+    if not get_settings().is_development:
+        raise HTTPException(403, "Use the local curation workflow to publish lessons")
     try:
         video = await VideoService.create_video_from_youtube(
             db=db,

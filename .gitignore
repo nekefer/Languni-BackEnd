@@ -83,3 +83,7 @@ Thumbs.db
 
 CLAUDE.md
 .claudeignore 
+cookie.txt
+cookies*.txt
+.curation/
+publication-batches/
