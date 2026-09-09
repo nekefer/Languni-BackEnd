@@ -16,6 +16,12 @@ class Video(Base):
     title = Column(String, nullable=False)
     url = Column(String, nullable=False)
     thumbnail_url = Column(String, nullable=True)
+    channel_title = Column(String, nullable=True)
+    youtube_published_at = Column(String, nullable=True)
+    publication_status = Column(String(20), nullable=False, server_default="draft", default="draft", index=True)
+    subtitle_language = Column(String(10), nullable=True)
+    subtitle_fetched_at = Column(DateTime(timezone=True), nullable=True)
+    subtitle_checksum = Column(String(64), nullable=True)
     
     # Language & Subtitles (fetched from YouTube API)
     language = Column(String(10), nullable=False, index=True)  # Main video language: "en", "fr", "es"

@@ -1,6 +1,5 @@
 import httpx
 import asyncio
-import os
 from typing import Optional
 from fastapi import HTTPException
 from cachetools import TTLCache
@@ -59,13 +58,7 @@ def _fetch_captions_with_priority(video_id: str, languages: list[str]) -> tuple[
     Returns (captions, language) or None if no language matched.
     """
     try:
-        cookies_path = os.getenv("YOUTUBE_COOKIES_PATH")
-        logger.info(f"Fetching captions for {video_id}, cookies_path={cookies_path}")
-        try:
-            api = YouTubeTranscriptApi(cookies=cookies_path) if cookies_path else YouTubeTranscriptApi()
-        except TypeError:
-            logger.warning("youtube-transcript-api version does not support cookies= in constructor, falling back")
-            api = YouTubeTranscriptApi()
+        api = YouTubeTranscriptApi()
         transcript_list = api.list(video_id)
     except TranscriptsDisabled:
         raise HTTPException(status_code=404, detail="Captions are disabled for this video")
@@ -171,9 +164,13 @@ async def get_video_captions(
     # 1) DB: return stored subtitles if they match a preferred language
     if db is not None:
         video = db.query(Video).filter(Video.youtube_video_id == video_id).first()
-        if video and video.subtitles and video.language in languages:
+        if video and video.subtitles and (video.publication_status == "published" or get_settings().is_development):
             logger.info(f"DB hit: {video_id} [{video.language}]")
-            return {"video_id": video_id, "language": video.language, "captions": video.subtitles}
+            return {"video_id": video_id, "language": video.subtitle_language or video.language, "captions": video.subtitles}
+
+    # Cloud servers must never fetch transcripts, including on cache misses.
+    if not get_settings().is_development:
+        raise HTTPException(status_code=404, detail="This video is not yet prepared for learning. Please choose a video from the library.")
 
     # 2) Check cache first for any preferred language
     for lang in languages:
