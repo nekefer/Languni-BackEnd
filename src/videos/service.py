@@ -55,7 +55,7 @@ class VideoService:
         offset: int = 0,
     ) -> Tuple[List[Video], int]:
         """Return videos filtered by language/topics/level, plus total count."""
-        query = db.query(Video).filter(Video.language == learning_language)
+        query = db.query(Video).filter(Video.language == learning_language, Video.publication_status == "published", Video.subtitles.isnot(None))
 
         if topics:
             # Overlap matches any of the topics in PostgreSQL arrays
@@ -88,7 +88,7 @@ class VideoService:
         limit: int = 20,
         offset: int = 0,
     ) -> Tuple[List[Video], int]:
-        query = db.query(Video)
+        query = db.query(Video).filter(Video.publication_status == "published", Video.subtitles.isnot(None))
         if language:
             query = query.filter(Video.language == language)
         total = query.count()

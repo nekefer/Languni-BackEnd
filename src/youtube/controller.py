@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Cookie, HTTPException, Query, Depends, Request
 from typing import Optional, Annotated
 from .service import get_last_liked_video, get_trending_videos, get_video_captions, get_curated_videos
-from .models import LikedVideo, TrendingVideosResponse, CaptionsResponse
+from .models import LikedVideo, TrendingVideosResponse, CaptionsResponse, TrendingVideo
+from ..videos.service import VideoService
 from ..auth.service import CurrentUser, get_valid_google_token, get_current_user_from_cookie
 from ..auth import models as auth_models
 from ..database.core import get_db
@@ -56,15 +57,28 @@ async def trending_videos(
     region: str = Query(default="US", description="ISO 3166-1 alpha-2 country code"),
     max_results: int = Query(default=25, ge=1, le=50, description="Number of results (1-50)"),
     page_token: Optional[str] = Query(default=None, description="Pagination token"),
-    category_id: Optional[str] = Query(default=None, description="Category ID (e.g., '10' for Music)")
+    category_id: Optional[str] = Query(default=None, description="Category ID (e.g., '10' for Music)"),
+    db: Session = Depends(get_db),
 ):
-    """Get trending videos from YouTube. Available to guests and authenticated users."""
-    return await get_trending_videos(
-        region=region,
-        max_results=max_results,
-        page_token=page_token,
-        category_id=category_id
-    )
+    """Return prepared library videos using the existing card response contract."""
+    language = {"FR": "fr", "ES": "es", "US": "en", "GB": "en"}.get(region, "en")
+    try:
+        offset = int(page_token or "0")
+        if offset < 0 or offset > 100000:
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(400, "Invalid page token")
+    items, total = VideoService.get_all_videos(db, language=language, limit=max_results, offset=offset)
+    return catalog_response(items, str(offset + max_results) if offset + max_results < total else None, region)
+
+
+def catalog_response(items, next_page_token=None, region="US"):
+    return TrendingVideosResponse(items=[TrendingVideo(
+        video_id=video.youtube_video_id, title=video.title, description="",
+        thumbnails={"high": {"url": video.thumbnail_url or f"https://i.ytimg.com/vi/{video.youtube_video_id}/hqdefault.jpg"}},
+        channel_title=video.channel_title or "",
+        published_at=video.youtube_published_at or video.created_at.isoformat(),
+    ) for video in items], next_page_token=next_page_token, region=region, category=None)
 
 
 @router.get("/curated", response_model=TrendingVideosResponse)
@@ -72,6 +86,7 @@ async def trending_videos(
 async def curated_videos(
     request: Request,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get personalized video recommendations based on the user's learning language, level, and topics.
@@ -83,11 +98,14 @@ async def curated_videos(
             detail="Please complete onboarding to access personalized recommendations."
         )
 
-    return await get_curated_videos(
+    items, _ = VideoService.get_recommended_videos(
+        db=db,
         learning_language=current_user.learning_language,
-        level=current_user.level,
+        difficulty_level=current_user.level,
         topics=current_user.topics or [],
+        limit=24,
     )
+    return catalog_response(items)
 
 
 @router.get("/{video_id}/captions", response_model=CaptionsResponse)

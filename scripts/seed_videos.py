@@ -26,13 +26,8 @@ from youtube_transcript_api import YouTubeTranscriptApi
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import get_settings
-from src.database.core import SessionLocal
-from src.entities.video import Video
+from src.curation.schema import TOPICS
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
-)
 logger = logging.getLogger("seed_videos")
 
 
@@ -40,16 +35,30 @@ class QuotaExhausted(Exception):
     """Raised when the YouTube API quota is exceeded (403)."""
     pass
 
+
+class YouTubeDiscoveryError(Exception):
+    """Safe upstream diagnostic without credentials or request URLs."""
+
+
+def check_discovery_response(response):
+    if response.status_code == 200:
+        return
+    try:
+        errors = response.json().get("error", {}).get("errors", [])
+        reason = errors[0].get("reason", "unknown") if errors else "unknown"
+    except (ValueError, TypeError, IndexError):
+        reason = "unknown"
+    if not re.fullmatch(r"[A-Za-z0-9_]+", str(reason)):
+        reason = "unknown"
+    if reason in ("quotaExceeded", "dailyLimitExceeded"):
+        raise QuotaExhausted("YouTube daily quota is exhausted. Retry after it resets.")
+    raise YouTubeDiscoveryError(f"YouTube returned HTTP {response.status_code} ({reason}). Check the API key's permissions and application restrictions.")
+
 # ---------------------------------------------------------------------------
 # Constants — must match frontend onboarding (src/utils/onboarding.js)
 # ---------------------------------------------------------------------------
 
 LANGUAGES = ["en", "fr", "es"]
-
-TOPICS = [
-    "music", "travel", "food", "sports", "technology", "business",
-    "entertainment", "science", "culture", "news", "education", "lifestyle",
-]
 
 VIDEOS_PER_COMBO = 5
 
@@ -298,6 +307,7 @@ async def search_videos(
         "q": query,
         "type": "video",
         "videoCaption": "closedCaption",
+        "videoEmbeddable": "true",
         "regionCode": region,
         "relevanceLanguage": language,
         "maxResults": max_results,
@@ -313,12 +323,7 @@ async def search_videos(
         params=params,
         timeout=15.0,
     )
-    if resp.status_code == 403:
-        logger.error("YouTube API quota exhausted — stopping all requests")
-        raise QuotaExhausted()
-    if resp.status_code != 200:
-        logger.error("search failed (q=%s): %s %s", query, resp.status_code, resp.text[:200])
-        return []
+    check_discovery_response(resp)
     return [
         item["id"]["videoId"]
         for item in resp.json().get("items", [])
@@ -335,7 +340,7 @@ async def fetch_video_details(
     if not video_ids:
         return []
     params = {
-        "part": "snippet,topicDetails,contentDetails",
+        "part": "snippet,topicDetails,contentDetails,status",
         "id": ",".join(video_ids[:50]),
         "key": api_key,
     }
@@ -344,12 +349,7 @@ async def fetch_video_details(
         params=params,
         timeout=15.0,
     )
-    if resp.status_code == 403:
-        logger.error("YouTube API quota exhausted — stopping all requests")
-        raise QuotaExhausted()
-    if resp.status_code != 200:
-        logger.error("videos.list detail fetch failed: %s %s", resp.status_code, resp.text[:200])
-        return []
+    check_discovery_response(resp)
     return resp.json().get("items", [])
 
 
@@ -440,6 +440,8 @@ def insert_video(db: Session, item: dict, region_hint: str, dry_run: bool, topic
     if has_caption != "true":
         logger.debug("  skip %s — no subtitles available", vid_id)
         return False
+
+    from src.entities.video import Video
 
     snippet = item.get("snippet", {})
     topic_details = item.get("topicDetails", {})
@@ -636,7 +638,12 @@ async def run_seed(
     resume_lang: str | None = None,
     resume_topic: str | None = None,
 ):
+    from src.database.core import SessionLocal
+    from src.entities.video import Video
+
     settings = get_settings()
+    if not settings.is_development:
+        raise RuntimeError("Seed downloads must run locally. Use the reviewed publication workflow for production.")
     api_key = settings.youtube_api_key
     db = SessionLocal()
 
@@ -713,6 +720,7 @@ async def run_seed(
 # ---------------------------------------------------------------------------
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(message)s")
     parser = argparse.ArgumentParser(
         description="Seed the videos table from YouTube API with auto-classification"
     )
