@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from src.entities.user import User
 from . import models
 from fastapi.security import OAuth2PasswordRequestForm
-from ..exceptions import AuthenticationError
+from ..exceptions import AuthenticationError, UserAlreadyExistsError
 from ..config import get_settings, Settings
 from ..database.core import DbSession
 import logging
@@ -252,7 +252,7 @@ def register_user(db: Session, register_user_request: models.RegisterUserRequest
     "check if the user already exists, if raise an error, otherwise create a new user"
     existing_user = db.query(User).filter(User.email == register_user_request.email).first()
     if existing_user:
-        raise AuthenticationError("A user with this email already exists.")
+        raise UserAlreadyExistsError()
     try:
         create_user_model = User(
             id=uuid4(),
